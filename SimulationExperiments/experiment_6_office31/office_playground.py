@@ -53,15 +53,17 @@ def init_gpu(gpu, memory):
         except RuntimeError as e:
             print(e)
 
-init_gpu(gpu=1, memory=18000)
+init_gpu(gpu=0, memory=22000)
 
 
 TRAIN_SAMPLE_SIZE = 20000
 TEST_SAMPLE_SIZE = 9000
-res_file_dir = "/headwind/misc/domain-adaptation/office31"
+res_file_dir = "/headwind/misc/datasets/office31/simon"
 
 
-from office_data import office31
+
+#from office_data import office31
+# pip install office31
 
 def transform_office_data(dataset, source_ds=True, target_ds=True, one_hot=False):
     x_tr_s = []
@@ -101,7 +103,7 @@ def process_office31(dataset='train', source_names=["dslr"], target_name="webcam
                                 image_resize=image_resize,
                                 group_in_out=False,
                                 framework_conversion="tensorflow",
-                                office_path="/local/home/euernst/mt-eugen-ernst/SimulationExperiments/experiment_4_digits/office"
+                                office_path="/headwind/misc/datasets/office31"
                             )
 
     for source_name in source_names:

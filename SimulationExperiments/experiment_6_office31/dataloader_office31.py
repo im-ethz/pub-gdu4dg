@@ -9,7 +9,7 @@ import torch
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
-base_path = "/local/home/euernst/mt-eugen-ernst/SimulationExperiments/experiment_4_digits"
+base_path = "/headwind/misc/datasets/office31"
 
 def listdir_nohidden(path):
     """List non-hidden items in a directory.
@@ -22,7 +22,7 @@ def listdir_nohidden(path):
 def read_office31_data(dataset_path, domain_name):
     data_paths = []
     data_labels = []
-    domain_dir = path.join(dataset_path, domain_name, "images")
+    domain_dir = path.join(dataset_path, domain_name)
     class_names = listdir_nohidden(domain_dir)
     class_names.sort()
     for label, class_name in enumerate(class_names):
@@ -81,7 +81,7 @@ def get_office31_split_sampler(labels, test_ratio=0.2, num_classes=31):
 # domain_names = ['amazon', 'dslr', 'webcam']
 # domain_name = 'dslr'
 def get_office31_dloader(base_path, domain_name, batch_size, num_workers):
-    dataset_path = os.path.join(base_path, 'office')
+    dataset_path = os.path.join(base_path)
     data_paths, data_labels = read_office31_data(dataset_path, domain_name)
     transforms_train = transforms.Compose([
         transforms.Resize((224, 224)),
