@@ -269,7 +269,7 @@ def office_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                    batch_size=batch_size, shuffle=True, validation_data=(x_val, y_val),
                    #callbacks=[cb]
                  )
-
+    model.evaluate(x_target_te, y_target_te, verbose=2)
     run_end = datetime.now()
 
     metrics = ['accuracy', tf.keras.metrics.CategoricalCrossentropy(from_logits=True)]
@@ -375,7 +375,7 @@ def office_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                              batch_size=batch_size, shuffle=True, validation_data=(x_val, y_val),
                              callbacks=callback
                              )
-
+            model.evaluate(x_target_te, y_target_te, verbose=2)
             if save_plot:
                 X_DATA = model.predict(x_target_te)
                 Y_DATA = decode_one_hot_vector(y_target_te)
@@ -435,6 +435,6 @@ def create_dir_if_not_exists(dir_path):
 
 
 if __name__ == "__main__":
-    for method in ['ips']:
+    for method in [None, 'ips', 'mmd', 'normed']:
         for TEST_SOURCES in [['amazon'], ['dslr'], ['webcam']]:
                 _ = office_classification(method=method, TARGET_DOMAIN=TEST_SOURCES)

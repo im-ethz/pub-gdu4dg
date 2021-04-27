@@ -75,7 +75,7 @@ def init_gpu(gpu, memory):
         except RuntimeError as e:
             print(e)
 
-init_gpu(gpu=0, memory=9000)
+init_gpu(gpu=0, memory=8000)
 
 
 '''
@@ -83,7 +83,7 @@ nohup /local/home/euernst/anaconda3/envs/euernst_MT_gpu/bin/python3.8 -u /local/
 '''
 
 # file path to the location where the results are stored
-res_file_dir = "/headwind/misc/domain-adaptation/digits/simon/test"
+res_file_dir = "/headwind/misc/domain-adaptation/digits/simon/run_all_single_best"
 
 SOURCE_SAMPLE_SIZE = 25000
 TARGET_SAMPLE_SIZE = 9000
@@ -97,10 +97,10 @@ class DigitsData(object):
 
 
 
-def digits_classification(method, TARGET_DOMAIN, single_best=False, single_source_domain=None,
+def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source_domain=None,
                           batch_norm=False,
                           lr=0.001,
-                          save_file=False, save_plot=False, save_feature=False,
+                          save_file=True, save_plot=False, save_feature=True,
                           activation="tanh",
                           bias=False,
                           fine_tune=True,
@@ -130,7 +130,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
     # used in case of "normed"
     domain_adaptation_spec_dict["orth_reg"] = reg = "SRIP"
-    domain_adaptation_spec_dict['reg_method'] = reg_method = reg if method == 'normed' else 'nOtHinG<3'
+    domain_adaptation_spec_dict['reg_method'] = reg_method = reg if method == 'normed' else 'none'
 
     # training specification
     use_optim = domain_adaptation_spec_dict['use_optim'] = 'adam' #"SGD"
@@ -155,24 +155,30 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         SOURCE_DOMAINS = single_source_domain
     else:
         SOURCE_DOMAINS = ['mnist', 'mnistm', 'svhn', 'syn', 'usps']
-
+    print(single_source_domain)
     # dataset used in K3DA
-    x_source_tr = np.concatenate([data.x_train_dict[source.lower()] for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
-    y_source_tr = np.concatenate([data.y_train_dict[source.lower()] for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
 
-    #tf.data.Dataset.from_tensor_slices((x_source_tr, y_source_tr)).cache().prefetch(buffer_size=tf.data.AUTOTUNE)
+    if (single_best == True) & (SOURCE_DOMAINS[0] == TARGET_DOMAIN[0].lower()):
+        print('exit')
+        return None
+    else:
+        x_source_tr = np.concatenate([data.x_train_dict[source.lower()] for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
+        y_source_tr = np.concatenate([data.y_train_dict[source.lower()] for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
 
-    x_source_tr, y_source_tr = shuffle(x_source_tr, y_source_tr, random_state=1234)
+        #tf.data.Dataset.from_tensor_slices((x_source_tr, y_source_tr)).cache().prefetch(buffer_size=tf.data.AUTOTUNE)
 
-    x_source_te = np.concatenate([data.x_test_dict[source.lower()] for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
-    y_source_te = np.concatenate([data.y_test_dict[source.lower()] for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
-    x_source_te, y_source_te = shuffle(x_source_te, y_source_te, random_state=1234)
+        x_source_tr, y_source_tr = shuffle(x_source_tr, y_source_tr, random_state=1234)
 
-    x_target_te = np.concatenate([data.x_test_dict[source] for source in TARGET_DOMAIN], axis=0)
-    y_target_te = np.concatenate([data.y_test_dict[source] for source in TARGET_DOMAIN], axis=0)
-    x_target_te, y_target_te = shuffle(x_target_te, y_target_te, random_state=1234)
+        x_source_te = np.concatenate([data.x_test_dict[source.lower()] for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
+        y_source_te = np.concatenate([data.y_test_dict[source.lower()] for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
+        x_source_te, y_source_te = shuffle(x_source_te, y_source_te, random_state=1234)
+        x_val, y_val = x_source_te, y_source_te
 
-    print("\n FINISHED LOADING DIGITS")
+        x_target_te = np.concatenate([data.x_test_dict[source] for source in TARGET_DOMAIN], axis=0)
+        y_target_te = np.concatenate([data.y_test_dict[source] for source in TARGET_DOMAIN], axis=0)
+        x_target_te, y_target_te = shuffle(x_target_te, y_target_te, random_state=1234)
+
+        print("\n FINISHED LOADING DIGITS")
 
     ##########################################
     ###     FEATURE EXTRACTOR
@@ -216,7 +222,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         prediction_layer.add(Dense(10))#, activation=activation, use_bias=bias))
 
     #
-    x_val, y_val = x_source_te, y_source_te
+
     callback = [EarlyStopping(patience=patience, restore_best_weights=True)]
 
     ##########################################
@@ -243,7 +249,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     run_start = datetime.now()
     hist = model.fit(x=x_source_tr, y=y_source_tr, epochs=num_epochs, verbose=2,
                      batch_size=batch_size, shuffle=False,
-                     validation_data=(x_val, y_val),
+                     validation_split=0.2,
                      callbacks=callback,
                      )
     run_end = datetime.now()
@@ -375,12 +381,31 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
             print('\n BEGIN FINE TUNING:\t' + method.upper() + "\t" + TARGET_DOMAIN[0] + "\n")
             hist = model.fit(x=x_source_tr, y=y_source_tr.astype(np.float32), epochs=num_epochs_FT, verbose=2,
-                                   batch_size=batch_size, shuffle=False, validation_data=(x_val, y_val),
+                                   batch_size=batch_size, shuffle=False, validation_split=0.2,
                                    callbacks=callback
                                    )
             model.evaluate(x_target_te, y_target_te, verbose=2)
 
-            if save_plot:
+            if save_plot or save_file:
+                run_id = np.random.randint(0, 10000, 1)[0]
+
+                save_dir_path = os.path.join(res_file_dir, "SINGLE_BEST") if single_best else os.path.join(res_file_dir,
+                                                                                                           "SOURCE_COMBINED")
+                create_dir_if_not_exists(save_dir_path)
+
+                save_dir_path = os.path.join(save_dir_path, TARGET_DOMAIN[0])
+                create_dir_if_not_exists(save_dir_path)
+
+                if single_best:
+                    save_dir_name = method.upper() + "_" + SOURCE_DOMAINS[0] + "_to_" + TARGET_DOMAIN[0] + "_" + str(
+                        run_id)
+                else:
+                    save_dir_name = method.upper() + "_" + TARGET_DOMAIN[0] + "_" + str(run_id)
+
+                save_dir_path = os.path.join(save_dir_path, save_dir_name)
+                create_dir_if_not_exists(save_dir_path)
+
+            if save_plot or save_file:
                 X_DATA = model.predict(x_target_te)
                 Y_DATA = decode_one_hot_vector(y_target_te)
 
@@ -535,20 +560,21 @@ if __name__ == "__main__":
     #digits_data = pd.read_pickle("/headwind/misc/domain-adaptation/digits/simon/run-all/Data/all.pkl")
     for i in range(5):
         experiments = []
-        for method in [None, 'ips', 'mmd', 'normed']:
+        for method in [None]:
             for kernel in [None]:
                 for TEST_SOURCES in [['mnistm'], ['mnist'], ['svhn'], ['syn'], ['usps']]:
                     for batch_norm in [True]:  # , False]:
                         for bias in [False]:  # , True]:
-                            # for single_source in [['mnistm'], ['mnist'], ['svhn'], ['syn'], ['usps']]:
-                            experiments.append({
-                                'data': digits_data,
-                                'method': method,
-                                'kernel': kernel,
-                                'batch_norm': batch_norm,
-                                'bias': bias,
-                                'TARGET_DOMAIN': TEST_SOURCES
-                            })
+                            for single_source in [['mnistm'], ['mnist'], ['svhn'], ['syn'], ['usps']]:
+                                experiments.append({
+                                    'data': digits_data,
+                                    'method': method,
+                                    'kernel': kernel,
+                                    'batch_norm': batch_norm,
+                                    'bias': bias,
+                                    'TARGET_DOMAIN': TEST_SOURCES,
+                                    'single_source_domain': single_source
+                                })
 
         print(f'Running {len(experiments)} experiments on {len(GPUS)} GPUs')
 
