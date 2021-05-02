@@ -344,7 +344,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         for method in ['ips', 'mmd', 'normed']:
         #for method in ['mmd']:
         #for method in ['normed']:
-        prediction_layer = tf.keras.Sequential([], name='prediction_layer')
+            prediction_layer = tf.keras.Sequential([], name='prediction_layer')
 
         num_domains = domain_adaptation_spec_dict['num_domains']
 
