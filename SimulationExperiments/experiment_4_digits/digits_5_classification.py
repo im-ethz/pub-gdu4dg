@@ -75,7 +75,7 @@ def init_gpu(gpu, memory):
         except RuntimeError as e:
             print(e)
 
-init_gpu(gpu=3, memory=8000)
+init_gpu(gpu=0, memory=6000)
 
 
 '''
@@ -83,7 +83,7 @@ nohup /local/home/euernst/anaconda3/envs/euernst_MT_gpu/bin/python3.8 -u /local/
 '''
 
 # file path to the location where the results are stored
-res_file_dir = "/local/home/sfoell/NeurIPS/results/run_all_single_none"
+res_file_dir = "/local/home/sfoell/NeurIPS/results/2021_05_02_source_combined"
 
 SOURCE_SAMPLE_SIZE = 25000
 TARGET_SAMPLE_SIZE = 9000
@@ -97,7 +97,7 @@ class DigitsData(object):
 
 
 
-def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source_domain=None,
+def digits_classification(method, TARGET_DOMAIN, single_best=False, single_source_domain=None,
                           batch_norm=False,
                           lr=0.001,
                           save_file=True, save_plot=False, save_feature=True,
@@ -340,13 +340,13 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
 
         feature_extractor_filepath = os.path.join(save_dir_path, 'feature_extractor.h5.tmp')
         feature_extractor.save(feature_extractor_filepath)
-        prediction_layer = tf.keras.Sequential([], name='prediction_layer')
 
         for method in ['ips', 'mmd', 'normed']:
         #for method in ['mmd']:
         #for method in ['normed']:
+        prediction_layer = tf.keras.Sequential([], name='prediction_layer')
 
-            num_domains = domain_adaptation_spec_dict['num_domains']
+        num_domains = domain_adaptation_spec_dict['num_domains']
 
             feature_extractor = keras.models.load_model(feature_extractor_filepath)
             feature_extractor.trainable = False
@@ -565,7 +565,7 @@ if __name__ == "__main__":
     #digits_data.to_pickle("/headwind/misc/domain-adaptation/digits/simon/run-all/Data/all.pkl")
     #digits_data = pd.read_pickle("/headwind/misc/domain-adaptation/digits/simon/run-all/Data/all.pkl")
     #for i in range(5):
-    for i in [4]:
+    for i in [0]:
         experiments = []
         #for method in ['IPS']:
         #for method in ['MMD']:
@@ -582,7 +582,7 @@ if __name__ == "__main__":
                                     'kernel': kernel,
                                     'batch_norm': batch_norm,
                                     'bias': bias,
-                                    'TARGET_DOMAIN': TEST_SOURCES#,
+                                    'TARGET_DOMAIN': TEST_SOURCES,
                                     #'single_source_domain': single_source#,
                                     'run' : i
                                 })
