@@ -75,7 +75,7 @@ def init_gpu(gpu, memory):
         except RuntimeError as e:
             print(e)
 
-init_gpu(gpu=0, memory=8000)
+init_gpu(gpu=3, memory=8000)
 
 
 '''
@@ -83,7 +83,7 @@ nohup /local/home/euernst/anaconda3/envs/euernst_MT_gpu/bin/python3.8 -u /local/
 '''
 
 # file path to the location where the results are stored
-res_file_dir = "/headwind/misc/domain-adaptation/digits/simon/run_all_single_best"
+res_file_dir = "/local/home/sfoell/NeurIPS/results/run_all_single_none"
 
 SOURCE_SAMPLE_SIZE = 25000
 TARGET_SAMPLE_SIZE = 9000
@@ -105,8 +105,8 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
                           bias=False,
                           fine_tune=True,
                           kernel=None,
-                          data: DigitsData=None
-                          ):
+                          data: DigitsData=None,
+                          run = None):
 
     domain_adaptation_spec_dict = {
         "num_domains": 10,
@@ -155,7 +155,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
         SOURCE_DOMAINS = single_source_domain
     else:
         SOURCE_DOMAINS = ['mnist', 'mnistm', 'svhn', 'syn', 'usps']
-    print(single_source_domain)
+    #print(single_source_domain)
     # dataset used in K3DA
 
     if (single_best == True) & (SOURCE_DOMAINS[0] == TARGET_DOMAIN[0].lower()):
@@ -249,7 +249,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
     run_start = datetime.now()
     hist = model.fit(x=x_source_tr, y=y_source_tr, epochs=num_epochs, verbose=2,
                      batch_size=batch_size, shuffle=False,
-                     validation_split=0.2,
+                     validation_data=(x_val, y_val),
                      callbacks=callback,
                      )
     run_end = datetime.now()
@@ -263,8 +263,10 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
 
     if save_plot or save_file:
         run_id = np.random.randint(0, 10000, 1)[0]
+        save_dir_path = os.path.join(res_file_dir, "run_" + str(run))
+        create_dir_if_not_exists(save_dir_path)
+        save_dir_path = os.path.join(save_dir_path, "SINGLE_BEST") if single_best else os.path.join(save_dir_path, "SOURCE_COMBINED")
 
-        save_dir_path = os.path.join(res_file_dir, "SINGLE_BEST") if single_best else os.path.join(res_file_dir, "SOURCE_COMBINED")
         create_dir_if_not_exists(save_dir_path)
 
         save_dir_path = os.path.join(save_dir_path, TARGET_DOMAIN[0])
@@ -338,9 +340,12 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
 
         feature_extractor_filepath = os.path.join(save_dir_path, 'feature_extractor.h5.tmp')
         feature_extractor.save(feature_extractor_filepath)
-
+        prediction_layer = tf.keras.Sequential([], name='prediction_layer')
 
         for method in ['ips', 'mmd', 'normed']:
+        #for method in ['mmd']:
+        #for method in ['normed']:
+
             num_domains = domain_adaptation_spec_dict['num_domains']
 
             feature_extractor = keras.models.load_model(feature_extractor_filepath)
@@ -381,15 +386,16 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
 
             print('\n BEGIN FINE TUNING:\t' + method.upper() + "\t" + TARGET_DOMAIN[0] + "\n")
             hist = model.fit(x=x_source_tr, y=y_source_tr.astype(np.float32), epochs=num_epochs_FT, verbose=2,
-                                   batch_size=batch_size, shuffle=False, validation_split=0.2,
+                                   batch_size=batch_size, shuffle=False, validation_data=(x_val, y_val),
                                    callbacks=callback
                                    )
             model.evaluate(x_target_te, y_target_te, verbose=2)
 
             if save_plot or save_file:
                 run_id = np.random.randint(0, 10000, 1)[0]
-
-                save_dir_path = os.path.join(res_file_dir, "SINGLE_BEST") if single_best else os.path.join(res_file_dir,
+                save_dir_path = os.path.join(res_file_dir, "run_" + str(run))
+                create_dir_if_not_exists(save_dir_path)
+                save_dir_path = os.path.join(save_dir_path, "SINGLE_BEST") if single_best else os.path.join(save_dir_path,
                                                                                                            "SOURCE_COMBINED")
                 create_dir_if_not_exists(save_dir_path)
 
@@ -558,22 +564,27 @@ if __name__ == "__main__":
     digits_data = DigitsData()
     #digits_data.to_pickle("/headwind/misc/domain-adaptation/digits/simon/run-all/Data/all.pkl")
     #digits_data = pd.read_pickle("/headwind/misc/domain-adaptation/digits/simon/run-all/Data/all.pkl")
-    for i in range(5):
+    #for i in range(5):
+    for i in [4]:
         experiments = []
+        #for method in ['IPS']:
+        #for method in ['MMD']:
+        #for method in ['Normed']:
         for method in [None]:
             for kernel in [None]:
                 for TEST_SOURCES in [['mnistm'], ['mnist'], ['svhn'], ['syn'], ['usps']]:
                     for batch_norm in [True]:  # , False]:
                         for bias in [False]:  # , True]:
-                            for single_source in [['mnistm'], ['mnist'], ['svhn'], ['syn'], ['usps']]:
+                            #for single_source in [['mnistm'], ['mnist'], ['svhn'], ['syn'], ['usps']]:
                                 experiments.append({
                                     'data': digits_data,
                                     'method': method,
                                     'kernel': kernel,
                                     'batch_norm': batch_norm,
                                     'bias': bias,
-                                    'TARGET_DOMAIN': TEST_SOURCES,
-                                    'single_source_domain': single_source
+                                    'TARGET_DOMAIN': TEST_SOURCES#,
+                                    #'single_source_domain': single_source#,
+                                    'run' : i
                                 })
 
         print(f'Running {len(experiments)} experiments on {len(GPUS)} GPUs')

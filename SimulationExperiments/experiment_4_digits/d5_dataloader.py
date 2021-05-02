@@ -9,7 +9,7 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 
-base_path = "/headwind/misc/datasets/digitfive"
+base_path = "/local/home/sfoell/NeurIPS/data/digitfive"
 
 class DigitFiveDataset(data.Dataset):
     def __init__(self, data, labels, transform=None, target_transform=None):
@@ -202,19 +202,6 @@ def load_digits(domains=["mnist", "mnistm", "svhn", "syn", "usps"], one_hot=True
             y_train = F.one_hot(y_train.to(torch.int64), num_classes=10)
             y_test = F.one_hot(y_test.to(torch.int64), num_classes=10)
 
-        if False:
-            for i in range(5):
-                random_img = np.random.randint(len(x_train))
-                plt.imshow(x_train[random_img])
-                plt.title("TRAIN IMAGE DOMAIN:{domain} | Label: {label}".format(domain= domain.upper(), label=str(np.argmax(y_train[random_img]))))
-                plt.show()
-
-            for i in range(5):
-                random_img = np.random.randint(len(x_test))
-                plt.imshow(x_test[random_img])
-                plt.title("TEST IMAGE: {label}".format(label = str(np.argmax(y_test[random_img]))))
-                plt.show()
-
         x_train_dict[domain]=x_train
         y_train_dict[domain]=y_train
         x_test_dict[domain]=x_test
@@ -229,24 +216,10 @@ def load_digits(domains=["mnist", "mnistm", "svhn", "syn", "usps"], one_hot=True
 
 if __name__ == "__main__":
 
-    print("test")
-
-    domain = "mnistm"
-    batch_size = int(1e10)
-
-
-
     load_usps(base_path)
 
     x_train, y_train, x_test, y_test = load_usps(base_path)
 
-    x_train.shape
-
     x_train, y_train, x_test, y_test = load_mnist_m(base_path)
-
-    x_train.shape
-
-    plt.imshow(x_train[0])
-    plt.show()
 
 
