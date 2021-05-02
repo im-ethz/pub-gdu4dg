@@ -346,7 +346,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         #for method in ['normed']:
             prediction_layer = tf.keras.Sequential([], name='prediction_layer')
 
-        num_domains = domain_adaptation_spec_dict['num_domains']
+            num_domains = domain_adaptation_spec_dict['num_domains']
 
             feature_extractor = keras.models.load_model(feature_extractor_filepath)
             feature_extractor.trainable = False
