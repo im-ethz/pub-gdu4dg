@@ -75,7 +75,7 @@ def init_gpu(gpu, memory):
         except RuntimeError as e:
             print(e)
 
-init_gpu(gpu=0, memory=6000)
+init_gpu(gpu=3, memory=4000)
 
 
 '''
@@ -83,7 +83,7 @@ nohup /local/home/euernst/anaconda3/envs/euernst_MT_gpu/bin/python3.8 -u /local/
 '''
 
 # file path to the location where the results are stored
-res_file_dir = "/local/home/sfoell/NeurIPS/results/2021_05_02_source_combined"
+res_file_dir = "/local/home/sfoell/NeurIPS/results/2021_05_02_single_best"
 
 SOURCE_SAMPLE_SIZE = 25000
 TARGET_SAMPLE_SIZE = 9000
@@ -97,7 +97,7 @@ class DigitsData(object):
 
 
 
-def digits_classification(method, TARGET_DOMAIN, single_best=False, single_source_domain=None,
+def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source_domain=None,
                           batch_norm=False,
                           lr=0.001,
                           save_file=True, save_plot=False, save_feature=True,
@@ -565,17 +565,17 @@ if __name__ == "__main__":
     #digits_data.to_pickle("/headwind/misc/domain-adaptation/digits/simon/run-all/Data/all.pkl")
     #digits_data = pd.read_pickle("/headwind/misc/domain-adaptation/digits/simon/run-all/Data/all.pkl")
     #for i in range(5):
-    for i in [0]:
+    for i in [4]:
         experiments = []
         #for method in ['IPS']:
         #for method in ['MMD']:
         #for method in ['Normed']:
-        for method in [None]:
+        for method in [None, 'IPS', 'MMD', 'Normed']:
             for kernel in [None]:
                 for TEST_SOURCES in [['mnistm'], ['mnist'], ['svhn'], ['syn'], ['usps']]:
                     for batch_norm in [True]:  # , False]:
                         for bias in [False]:  # , True]:
-                            #for single_source in [['mnistm'], ['mnist'], ['svhn'], ['syn'], ['usps']]:
+                            for single_source in [['mnistm'], ['mnist'], ['svhn'], ['syn'], ['usps']]:
                                 experiments.append({
                                     'data': digits_data,
                                     'method': method,
@@ -583,7 +583,7 @@ if __name__ == "__main__":
                                     'batch_norm': batch_norm,
                                     'bias': bias,
                                     'TARGET_DOMAIN': TEST_SOURCES,
-                                    #'single_source_domain': single_source#,
+                                    'single_source_domain': single_source,
                                     'run' : i
                                 })
 
