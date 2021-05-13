@@ -83,7 +83,7 @@ nohup /local/home/euernst/anaconda3/envs/euernst_MT_gpu/bin/python3.8 -u /local/
 '''
 
 # file path to the location where the results are stored
-res_file_dir = "/local/home/sfoell/NeurIPS/results/2021_05_02_single_best"
+res_file_dir = "/headwind/misc/domain-adaptation/digits/eugen"
 
 SOURCE_SAMPLE_SIZE = 25000
 TARGET_SAMPLE_SIZE = 9000
@@ -94,7 +94,6 @@ img_shape = (32, 32, 3)
 class DigitsData(object):
     def __init__(self, test_size=SOURCE_SAMPLE_SIZE):
         self.x_train_dict, self.y_train_dict, self.x_test_dict, self.y_test_dict = load_digits(test_size=test_size)
-
 
 
 def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source_domain=None,
@@ -111,11 +110,10 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
     domain_adaptation_spec_dict = {
         "num_domains": 10,
         "domain_dim": 10,
-        "sigma": 5.5,
-        'softness_param': 2,
+        "sigma": 10.5,
+        'softness_param': 5,
         "similarity_measure": method,# MMD, IPS
         "domain_reg_param": 1e-2,
-        #"activation": "tanh",
         "img_shape": img_shape,
         "bias": bias,
         "source_sample_size": SOURCE_SAMPLE_SIZE,
@@ -129,14 +127,14 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
     domain_adaptation_spec_dict["kernel"] = "custom" if kernel is not None else "single"
 
     # used in case of "normed"
-    domain_adaptation_spec_dict["orth_reg"] = reg = "SRIP"
+    domain_adaptation_spec_dict["orth_reg"] = reg = "SO"
     domain_adaptation_spec_dict['reg_method'] = reg_method = reg if method == 'normed' else 'none'
 
     # training specification
     use_optim = domain_adaptation_spec_dict['use_optim'] = 'adam' #"SGD"
     optimizer = tf.keras.optimizers.SGD(lr) if use_optim.lower() =="sgd" else tf.keras.optimizers.Adam(lr)
 
-    batch_size = domain_adaptation_spec_dict['batch_size'] = 256
+    batch_size = domain_adaptation_spec_dict['batch_size'] = 64
     domain_adaptation_spec_dict['epochs'] = num_epochs = 250
     domain_adaptation_spec_dict['epochs_FT'] = num_epochs_FT = 250
     domain_adaptation_spec_dict['lr'] = lr
@@ -189,9 +187,6 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
     else:
         feature_extractor = get_domainnet_feature_extractor(dropout=dropout)
 
-    #if batch_norm:
-    #    feature_extractor.add(BatchNormalization())
-
     ##########################################
     ###     PREDICTION LAYER
     ##########################################
@@ -220,8 +215,6 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
     else:
         method = "SOURCE_ONLY"
         prediction_layer.add(Dense(10))#, activation=activation, use_bias=bias))
-
-    #
 
     callback = [EarlyStopping(patience=patience, restore_best_weights=True)]
 
@@ -556,10 +549,8 @@ def run_experiment(experiment, gpu=None):
 
 
 GPUS = [2]
-# GPUS = [2]
 
 if __name__ == "__main__":
-
     # load data once
     digits_data = DigitsData()
     #digits_data.to_pickle("/headwind/misc/domain-adaptation/digits/simon/run-all/Data/all.pkl")
@@ -570,7 +561,7 @@ if __name__ == "__main__":
         #for method in ['IPS']:
         #for method in ['MMD']:
         #for method in ['Normed']:
-        for method in [None, 'IPS', 'MMD', 'Normed']:
+        for method in ['MMD', 'Normed']:
             for kernel in [None]:
                 for TEST_SOURCES in [['mnistm'], ['mnist'], ['svhn'], ['syn'], ['usps']]:
                     for batch_norm in [True]:  # , False]:

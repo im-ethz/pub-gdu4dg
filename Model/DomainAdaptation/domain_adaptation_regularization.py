@@ -53,7 +53,7 @@ class DomainOrthogonalRegularizer(tf.keras.regularizers.Regularizer):
        """
 
     def __init__(self, param=0.1, domain_number=None, kernel=None, domains=None,
-                 orthogonalization_penalty='SRIP', similarity_measure=None, softness_param=1,
+                 orthogonalization_penalty='SRIP', similarity_measure=None,
                  C_domains=None,
                  amplitude=1.0,
                  param_orth=None,
@@ -76,15 +76,13 @@ class DomainOrthogonalRegularizer(tf.keras.regularizers.Regularizer):
 
         self.lambda_alpha = 0.2
         self.lambda_sparse = 0.05
-        self.softness_param = softness_param
         self.domain_number = domain_number
         self.mmd_penalty = True
 
         # PLACEHOLDER (will be updated throughout the training)
         self.alpha = None
         self.batch_sample = None
-
-
+        self.use_kme_gram = True
 
     # for debugging purpose...
     #h = tf.random.normal(shape=(self.domain_basis['domain_0'].numpy().shape[0], input_shape[-1]))
@@ -98,6 +96,7 @@ class DomainOrthogonalRegularizer(tf.keras.regularizers.Regularizer):
 
     def __call__(self, weight_matrix):
 
+
         if self.num_domains is None:
             self.num_domains = len(self.domains)
 
@@ -105,32 +104,36 @@ class DomainOrthogonalRegularizer(tf.keras.regularizers.Regularizer):
             self.domain_dimension = self.domains[0].shape[0]
         #other_domains_list = [self.domains[k] for k in range(len(self.domains)) if k != self.domain_number]
 
-        domain_vectors = tf.concat(self.domains + [weight_matrix], axis=0)
+        if self.orthogonalization_penalty.lower() not in ['srip', "so", "mc"]:
+
+            if self.use_kme_gram:
+                gram_matrix = self.get_kme_gram(weight_matrix)
+                eye_size = 1
+
+            else:
+                domain_vectors = tf.concat(self.domains + [weight_matrix], axis=0)
+                gram_matrix = self.kernel.matrix(domain_vectors, domain_vectors)
+                eye_size = self.domain_dimension
 
         if self.orthogonalization_penalty.lower() == 'srip':
-            gram_matrix = self.kernel.matrix(domain_vectors, domain_vectors)
-            domain_orthogonality_penalty = (tf.linalg.svd(gram_matrix - tf.eye(self.domain_dimension*(self.num_domains+1)), compute_uv=False)[0])
+            domain_orthogonality_penalty = (tf.linalg.svd(gram_matrix - tf.eye(eye_size * (self.num_domains+1)), compute_uv=False)[0])
             self.orth_pen_name = "SRIP"
+
+        elif self.orthogonalization_penalty.lower() == "so":
+            domain_orthogonality_penalty = tf.norm(gram_matrix - tf.eye(eye_size * (self.num_domains+1)), ord='fro', axis=(0, 1))
+            self.orth_pen_name = "soft_orthogonality"
+
+        elif self.orthogonalization_penalty.lower() == "mc":
+            domain_orthogonality_penalty = tf.norm(gram_matrix - tf.eye(eye_size * (self.num_domains+1)), ord=np.inf, axis=(0, 1))
+            self.orth_pen_name = "mutual_coherence"
 
         elif self.orthogonalization_penalty.lower() == 'icp':
             domain_orthogonality_penalty = reduce_sum([reduce_mean(self.kernel.matrix(domain, weight_matrix)) for domain in self.domains])
             self.orth_pen_name = "cross_domain_IPS"
 
-        elif self.orthogonalization_penalty.lower() == "so":
-            gram_matrix = self.kernel.matrix(domain_vectors, domain_vectors)
-            domain_orthogonality_penalty = tf.norm(gram_matrix - tf.eye(self.domain_dimension*(self.num_domains+1)), ord='fro', axis=(0, 1))
-            self.orth_pen_name = "soft_orthogonality"
-
-        elif self.orthogonalization_penalty.lower() == "mc":
-            gram_matrix = self.kernel.matrix(domain_vectors, domain_vectors)
-            domain_orthogonality_penalty = tf.norm(gram_matrix - tf.eye(self.domain_dimension*(self.num_domains+1)), ord=np.inf, axis=(0, 1))
-            self.orth_pen_name = "mutual_coherence"
-
         else:
             domain_orthogonality_penalty = float(0.0)
             self.orth_pen_name = "NONE"
-
-
 
         self.orth_pen = float(1/(self.num_domains+1)) * (domain_orthogonality_penalty)
 
@@ -159,10 +162,8 @@ class DomainOrthogonalRegularizer(tf.keras.regularizers.Regularizer):
     def get_mmd_penalty(self, weight_matrix):
         # (1)
         pen_1 = float(1 / self.num_domains + 1) * reduce_mean(diag_part(self.kernel.matrix(self.batch_data, self.batch_data)))
-
         # (2)
         pen_2 = reduce_mean(multiply(self.alpha_coefficients[:, self.domain_number], reduce_mean(self.kernel.matrix(self.batch_data, weight_matrix), axis=-1)))
-
         # (3)
         pen_3 = reduce_mean(
         [reduce_mean(self.kernel.matrix(weight_matrix, self.domains[k])) * reduce_sum(tf.matmul(tf.expand_dims(self.alpha_coefficients[:, self.domain_number], axis=-1), tf.expand_dims(self.alpha_coefficients[:, k], axis=-1), transpose_b=True)) for k in range(len(self.domains))] \
@@ -193,8 +194,20 @@ class DomainOrthogonalRegularizer(tf.keras.regularizers.Regularizer):
     def set_param(self, param):
         self.param = param
 
+    def get_kme_gram(self, weight_matrix):
+        kme_gram_list = []
+        for i in range(self.num_domains + 1):
+            kme_gram_row_list = []
+            for j in range(self.num_domains + 1):
+                domain_i = weight_matrix if i == self.num_domains else self.domains[i]
+                domain_j = weight_matrix if j == self.num_domains else self.domains[j]
 
+                kme_gram_row_list.append(reduce_mean(self.kernel.matrix(domain_i, domain_j)))
 
+            kme_gram_row_tensor = tf.stack(kme_gram_row_list, axis=0)
+            kme_gram_list.append(kme_gram_row_tensor)
+        kme_gram_tensor = tf.stack(kme_gram_list, axis=0)
+        return kme_gram_tensor
 
 class KMEOrthogonalityRegularizer(tf.keras.regularizers.Regularizer):
     def __init__(self, param=0.01, kernel=None, domains=None):
