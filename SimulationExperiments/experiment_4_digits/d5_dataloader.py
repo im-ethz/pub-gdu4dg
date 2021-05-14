@@ -9,7 +9,7 @@ import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 
-base_path = "/headwind/misc/datasets/digitfive"
+base_path = "/local/home/sfoell/NeurIPS/data/digitfive"
 
 class DigitFiveDataset(data.Dataset):
     def __init__(self, data, labels, transform=None, target_transform=None):

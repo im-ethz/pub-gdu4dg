@@ -1,6 +1,11 @@
 import multiprocessing
 import warnings
+import umap
+import umap.plot
+import skimage
+import hdbscan
 from functools import partial
+
 
 import keras
 
@@ -22,9 +27,12 @@ tf.random.set_seed(1234)
 import tensorflow_probability as tfp
 
 from datetime import datetime
+import seaborn as sns
+import matplotlib.pyplot as plt
 from sklearn.utils import shuffle
 from tensorflow.python.keras.layers import *
 from sklearn.metrics.pairwise import euclidean_distances
+from sklearn.preprocessing import StandardScaler
 from tensorflow.python.keras.callbacks import EarlyStopping
 from tensorflow_probability.python.math.psd_kernels.positive_semidefinite_kernel import _SumKernel
 
@@ -47,6 +55,7 @@ from SimulationExperiments.experiment_4_digits.d5_dataloader import load_digits
 
 from Model.DomainAdaptation.DomainAdaptationModel import DomainAdaptationModel
 from Model.DomainAdaptation.domain_adaptation_layer import DomainAdaptationLayer
+from Model.DomainAdaptation.domain_adaptation_callback import DomainCallback, DomainRegularizationCallback, FreezeFeatureExtractor
 
 #def init_gpu(used_gpus=[2]):
 #    MEMORY_LIMITS = {0: 9000, 1: 9000, 2: 8000, 3: 8000,}
@@ -75,15 +84,10 @@ def init_gpu(gpu, memory):
         except RuntimeError as e:
             print(e)
 
-init_gpu(gpu=3, memory=4000)
-
-
-'''
-nohup /local/home/euernst/anaconda3/envs/euernst_MT_gpu/bin/python3.8 -u /local/home/euernst/mt-eugen-ernst/SimulationExperiments/experiment_4_digits/digits_5_classification.py > /local/home/euernst/mt-eugen-ernst/SimulationExperiments/simulation_results/experiment_4/nohup.log 2>&1 &
-'''
+init_gpu(gpu=0, memory=6000)
 
 # file path to the location where the results are stored
-res_file_dir = "/headwind/misc/domain-adaptation/digits/eugen"
+res_file_dir = "/local/home/sfoell/NeurIPS/results/source_combined_20210514"
 
 SOURCE_SAMPLE_SIZE = 25000
 TARGET_SAMPLE_SIZE = 9000
@@ -96,7 +100,8 @@ class DigitsData(object):
         self.x_train_dict, self.y_train_dict, self.x_test_dict, self.y_test_dict = load_digits(test_size=test_size)
 
 
-def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source_domain=None,
+
+def digits_classification(method, TARGET_DOMAIN, single_best=False, single_source_domain=None,
                           batch_norm=False,
                           lr=0.001,
                           save_file=True, save_plot=False, save_feature=True,
@@ -105,15 +110,17 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
                           fine_tune=True,
                           kernel=None,
                           data: DigitsData=None,
-                          run = None):
+                          run = None,
+                          embedding = True):
 
     domain_adaptation_spec_dict = {
-        "num_domains": 10,
+        "num_domains": 5,
         "domain_dim": 10,
-        "sigma": 10.5,
-        'softness_param': 5,
+        "sigma": 5.5,
+        'softness_param': 2,
         "similarity_measure": method,# MMD, IPS
-        "domain_reg_param": 1e-2,
+        "domain_reg_param": 1e-3,
+        #"activation": "tanh",
         "img_shape": img_shape,
         "bias": bias,
         "source_sample_size": SOURCE_SAMPLE_SIZE,
@@ -127,14 +134,14 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
     domain_adaptation_spec_dict["kernel"] = "custom" if kernel is not None else "single"
 
     # used in case of "normed"
-    domain_adaptation_spec_dict["orth_reg"] = reg = "SO"
+    domain_adaptation_spec_dict["orth_reg"] = reg = "SRIP"
     domain_adaptation_spec_dict['reg_method'] = reg_method = reg if method == 'normed' else 'none'
 
     # training specification
     use_optim = domain_adaptation_spec_dict['use_optim'] = 'adam' #"SGD"
     optimizer = tf.keras.optimizers.SGD(lr) if use_optim.lower() =="sgd" else tf.keras.optimizers.Adam(lr)
 
-    batch_size = domain_adaptation_spec_dict['batch_size'] = 64
+    batch_size = domain_adaptation_spec_dict['batch_size'] = 256
     domain_adaptation_spec_dict['epochs'] = num_epochs = 250
     domain_adaptation_spec_dict['epochs_FT'] = num_epochs_FT = 250
     domain_adaptation_spec_dict['lr'] = lr
@@ -178,6 +185,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
 
         print("\n FINISHED LOADING DIGITS")
 
+
     ##########################################
     ###     FEATURE EXTRACTOR
     ##########################################
@@ -186,6 +194,9 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
 
     else:
         feature_extractor = get_domainnet_feature_extractor(dropout=dropout)
+
+    #if batch_norm:
+    #    feature_extractor.add(BatchNormalization())
 
     ##########################################
     ###     PREDICTION LAYER
@@ -216,6 +227,8 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
         method = "SOURCE_ONLY"
         prediction_layer.add(Dense(10))#, activation=activation, use_bias=bias))
 
+    #
+
     callback = [EarlyStopping(patience=patience, restore_best_weights=True)]
 
     ##########################################
@@ -240,6 +253,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
                   )
 
     run_start = datetime.now()
+    domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True, max_sample_size=5000)
     hist = model.fit(x=x_source_tr, y=y_source_tr, epochs=num_epochs, verbose=2,
                      batch_size=batch_size, shuffle=False,
                      validation_data=(x_val, y_val),
@@ -272,6 +286,33 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
 
         save_dir_path = os.path.join(save_dir_path, save_dir_name)
         create_dir_if_not_exists(save_dir_path)
+
+    if embedding:
+        X_embedded_tr = model.feature_extractor.predict(x_source_tr[0:50000])
+        if i == 0:
+            pd.DataFrame(X_embedded_tr).to_csv(save_dir_path + '/feature_extractor_' + TARGET_DOMAIN[0] + '_data.csv')
+
+        embedder = umap.UMAP(n_neighbors=30, min_dist=0.1, random_state=42)
+
+        #mapper = embedder.fit(X_embedded_tr)
+        #umap.plot.connectivity(mapper)
+        #plt.show()
+
+        clusterable_embedding = embedder.fit_transform(X_embedded_tr)
+        clusterer = hdbscan.HDBSCAN(min_samples=100, cluster_selection_epsilon=0.5, min_cluster_size=1000)
+        clusterer.fit(clusterable_embedding)
+        clusterer.labels_.max()
+        labels = clusterer.fit_predict(clusterable_embedding)
+
+        plt.figure(figsize=(10, 10))
+        plt.scatter(clusterable_embedding[:, 0], clusterable_embedding[:, 1], c=labels, s=0.1, cmap='Spectral')
+        clustered = (labels >= 0)
+        print(np.sum(clustered) / X_embedded_tr.shape[0])
+        plt.title('Estimated number of clusters: %d' % clusterer.labels_.max())
+        plt.show()
+
+        print('Estimated number of clusters: %d' % clusterer.labels_.max())
+        M = clusterer.labels_.max()
 
     if save_plot or save_feature:
         X_DATA = model.predict(x_target_te)
@@ -329,6 +370,8 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
     ##########################################
 
     # used only if no DA layer is used in previous stage
+    #fine_tune = False
+
     if domain_adaptation is False and fine_tune:
 
         feature_extractor_filepath = os.path.join(save_dir_path, 'feature_extractor.h5.tmp')
@@ -345,8 +388,8 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
             feature_extractor.trainable = False
 
             # sigma is estimated based on the median heuristic, with sample size of 5000 features
-            #sigma = domain_adaptation_spec_dict['sigma'] = sigma_median(feature_extractor.predict(x_source_tr))
-            #print("\n\n\n ESTIMATED SIGMA: {sigma} ".format(sigma=str(np.round(sigma, 3))))
+            sigma = domain_adaptation_spec_dict['sigma'] = sigma_median(feature_extractor.predict(x_source_tr))
+            print("\n\n\n ESTIMATED SIGMA: {sigma} ".format(sigma=str(np.round(sigma, 3))))
 
             #######################################
             ###     PREDICTION LAYER
@@ -356,8 +399,8 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
             domain_reg_param = domain_adaptation_spec_dict["domain_reg_param"]
             softness_param = domain_adaptation_spec_dict["softness_param"]
             sigma = domain_adaptation_spec_dict['sigma']
-            prediction_layer.add(BatchNormalization())
-            prediction_layer.add(DomainAdaptationLayer(num_domains=num_domains,
+            #prediction_layer.add(BatchNormalization())
+            prediction_layer.add(DomainAdaptationLayer(num_domains=M,
                                                        domain_dimension=domain_dim,
                                                        softness_param=softness_param,
                                                        units=10,
@@ -377,10 +420,14 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
 
             model.compile(optimizer=optimizer, loss=tf.keras.losses.CategoricalCrossentropy(from_logits=from_logits), metrics=metrics)
 
+
+            #domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True, max_sample_size=5000)
+
+
             print('\n BEGIN FINE TUNING:\t' + method.upper() + "\t" + TARGET_DOMAIN[0] + "\n")
             hist = model.fit(x=x_source_tr, y=y_source_tr.astype(np.float32), epochs=num_epochs_FT, verbose=2,
                                    batch_size=batch_size, shuffle=False, validation_data=(x_val, y_val),
-                                   callbacks=callback
+                                   callbacks=[callback]
                                    )
             model.evaluate(x_target_te, y_target_te, verbose=2)
 
@@ -463,10 +510,10 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
 #    return np.mean(kernel.matrix(x1, x1)) - 2 * np.mean(kernel.matrix(x1, x2)) + np.mean(kernel.matrix(x2, x2))
 
 
-#def sigma_median(x_data, sample_size=5000):
-#    x_data = x_data[:sample_size]
-#    sigma_median = np.median(euclidean_distances(x_data, x_data))
-#    return sigma_median
+def sigma_median(x_data, sample_size=5000):
+    x_data = x_data[:sample_size]
+    sigma_median = np.median(euclidean_distances(x_data, x_data))
+    return sigma_median
 
 
 def get_domainnet_feature_extractor(dropout=0.5):
@@ -549,24 +596,26 @@ def run_experiment(experiment, gpu=None):
 
 
 GPUS = [2]
+# GPUS = [2]
 
 if __name__ == "__main__":
+
     # load data once
     digits_data = DigitsData()
     #digits_data.to_pickle("/headwind/misc/domain-adaptation/digits/simon/run-all/Data/all.pkl")
     #digits_data = pd.read_pickle("/headwind/misc/domain-adaptation/digits/simon/run-all/Data/all.pkl")
     #for i in range(5):
-    for i in [4]:
+    for i in [0]:
         experiments = []
         #for method in ['IPS']:
         #for method in ['MMD']:
         #for method in ['Normed']:
-        for method in ['MMD', 'Normed']:
+        for method in [None]:
             for kernel in [None]:
-                for TEST_SOURCES in [['mnistm'], ['mnist'], ['svhn'], ['syn'], ['usps']]:
+                for TEST_SOURCES in [['mnistm'], ['mnist'], ['syn'], ['svhn'], ['usps']]:
                     for batch_norm in [True]:  # , False]:
                         for bias in [False]:  # , True]:
-                            for single_source in [['mnistm'], ['mnist'], ['svhn'], ['syn'], ['usps']]:
+                            #for single_source in [['mnistm'], ['mnist'], ['svhn'], ['syn'], ['usps']]:
                                 experiments.append({
                                     'data': digits_data,
                                     'method': method,
@@ -574,7 +623,7 @@ if __name__ == "__main__":
                                     'batch_norm': batch_norm,
                                     'bias': bias,
                                     'TARGET_DOMAIN': TEST_SOURCES,
-                                    'single_source_domain': single_source,
+                                    #'single_source_domain': single_source,
                                     'run' : i
                                 })
 
