@@ -177,6 +177,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
 
         print("\n FINISHED LOADING DIGITS")
 
+
     ##########################################
     ###     FEATURE EXTRACTOR
     ##########################################
@@ -185,6 +186,9 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
 
     else:
         feature_extractor = get_domainnet_feature_extractor(dropout=dropout)
+
+    #if batch_norm:
+    #    feature_extractor.add(BatchNormalization())
 
     ##########################################
     ###     PREDICTION LAYER
@@ -215,6 +219,8 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
         method = "SOURCE_ONLY"
         prediction_layer.add(Dense(10))#, activation=activation, use_bias=bias))
 
+    #
+
     callback = [EarlyStopping(patience=patience, restore_best_weights=True)]
 
     ##########################################
@@ -239,6 +245,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
                   )
 
     run_start = datetime.now()
+    domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True, max_sample_size=5000)
     hist = model.fit(x=x_source_tr, y=y_source_tr, epochs=num_epochs, verbose=2,
                      batch_size=batch_size, shuffle=False,
                      validation_data=(x_val, y_val),
@@ -271,6 +278,33 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
 
         save_dir_path = os.path.join(save_dir_path, save_dir_name)
         create_dir_if_not_exists(save_dir_path)
+
+    if embedding:
+        X_embedded_tr = model.feature_extractor.predict(x_source_tr[0:50000])
+        if i == 0:
+            pd.DataFrame(X_embedded_tr).to_csv(save_dir_path + '/feature_extractor_' + TARGET_DOMAIN[0] + '_data.csv')
+
+        embedder = umap.UMAP(n_neighbors=30, min_dist=0.1, random_state=42)
+
+        #mapper = embedder.fit(X_embedded_tr)
+        #umap.plot.connectivity(mapper)
+        #plt.show()
+
+        clusterable_embedding = embedder.fit_transform(X_embedded_tr)
+        clusterer = hdbscan.HDBSCAN(min_samples=100, cluster_selection_epsilon=0.5, min_cluster_size=1000)
+        clusterer.fit(clusterable_embedding)
+        clusterer.labels_.max()
+        labels = clusterer.fit_predict(clusterable_embedding)
+
+        plt.figure(figsize=(10, 10))
+        plt.scatter(clusterable_embedding[:, 0], clusterable_embedding[:, 1], c=labels, s=0.1, cmap='Spectral')
+        clustered = (labels >= 0)
+        print(np.sum(clustered) / X_embedded_tr.shape[0])
+        plt.title('Estimated number of clusters: %d' % clusterer.labels_.max())
+        plt.show()
+
+        print('Estimated number of clusters: %d' % clusterer.labels_.max())
+        M = clusterer.labels_.max()
 
     if save_plot or save_feature:
         X_DATA = model.predict(x_target_te)
@@ -462,10 +496,10 @@ def digits_classification(method, TARGET_DOMAIN, single_best=True, single_source
 #    return np.mean(kernel.matrix(x1, x1)) - 2 * np.mean(kernel.matrix(x1, x2)) + np.mean(kernel.matrix(x2, x2))
 
 
-#def sigma_median(x_data, sample_size=5000):
-#    x_data = x_data[:sample_size]
-#    sigma_median = np.median(euclidean_distances(x_data, x_data))
-#    return sigma_median
+def sigma_median(x_data, sample_size=5000):
+    x_data = x_data[:sample_size]
+    sigma_median = np.median(euclidean_distances(x_data, x_data))
+    return sigma_median
 
 
 def get_domainnet_feature_extractor(dropout=0.5):
@@ -548,24 +582,26 @@ def run_experiment(experiment, gpu=None):
 
 
 GPUS = [2]
+# GPUS = [2]
 
 if __name__ == "__main__":
+
     # load data once
     digits_data = DigitsData()
     #digits_data.to_pickle("/headwind/misc/domain-adaptation/digits/simon/run-all/Data/all.pkl")
     #digits_data = pd.read_pickle("/headwind/misc/domain-adaptation/digits/simon/run-all/Data/all.pkl")
     #for i in range(5):
-    for i in [4]:
+    for i in [0]:
         experiments = []
         #for method in ['IPS']:
         #for method in ['MMD']:
         #for method in ['Normed']:
-        for method in ['MMD', 'Normed']:
+        for method in [None]:
             for kernel in [None]:
-                for TEST_SOURCES in [['mnistm'], ['mnist'], ['svhn'], ['syn'], ['usps']]:
+                for TEST_SOURCES in [['mnistm'], ['mnist'], ['syn'], ['svhn'], ['usps']]:
                     for batch_norm in [True]:  # , False]:
                         for bias in [False]:  # , True]:
-                            for single_source in [['mnistm'], ['mnist'], ['svhn'], ['syn'], ['usps']]:
+                            #for single_source in [['mnistm'], ['mnist'], ['svhn'], ['syn'], ['usps']]:
                                 experiments.append({
                                     'data': digits_data,
                                     'method': method,
@@ -573,7 +609,7 @@ if __name__ == "__main__":
                                     'batch_norm': batch_norm,
                                     'bias': bias,
                                     'TARGET_DOMAIN': TEST_SOURCES,
-                                    'single_source_domain': single_source,
+                                    #'single_source_domain': single_source,
                                     'run' : i
                                 })
 
