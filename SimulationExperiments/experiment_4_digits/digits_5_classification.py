@@ -24,16 +24,14 @@ import tensorflow_probability as tfp
 from datetime import datetime
 from sklearn.utils import shuffle
 from tensorflow.python.keras.layers import *
-from sklearn.metrics.pairwise import euclidean_distances
 from tensorflow.python.keras.callbacks import EarlyStopping
 from tensorflow_probability.python.math.psd_kernels.positive_semidefinite_kernel import _SumKernel
 
 
-from tensorflow.python.keras import backend as K
-
 logging.disable(logging.WARNING)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # Find code directory relative to our directory
 abspath = os.path.abspath(__file__)
 os.chdir(os.path.dirname(abspath))
@@ -65,6 +63,7 @@ from Model.DomainAdaptation.domain_adaptation_layer import DomainAdaptationLayer
 #            traceback.print_exc()
 #            pass
 
+
 def init_gpu(gpu, memory):
     used_gpu = gpu
     gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -75,7 +74,7 @@ def init_gpu(gpu, memory):
         except RuntimeError as e:
             print(e)
 
-init_gpu(gpu=3, memory=4000)
+init_gpu(gpu=1, memory=10000)
 
 
 '''

@@ -6,7 +6,7 @@ from tensorflow.python.ops.nn_ops import softmax
 from tensorflow.python.ops.linalg.linalg import diag_part
 
 
-class DomainOrthogonalRegularizer(tf.keras.regularizers.Regularizer):
+class DomainRegularizer(tf.keras.regularizers.Regularizer):
     """
        Regularization of the domains that are included in the `DomainAdaptationLayer`. The regularization cosists of
        two penalty term, namely the orthogonal penalty and the MMD penalty.
@@ -57,7 +57,7 @@ class DomainOrthogonalRegularizer(tf.keras.regularizers.Regularizer):
                  C_domains=None,
                  amplitude=1.0,
                  param_orth=None,
-                 sparse_reg=False
+                 sparse_reg=True
                  ):
         self.param = param
         self.param_orth = param_orth if param_orth is not None else param
@@ -67,22 +67,20 @@ class DomainOrthogonalRegularizer(tf.keras.regularizers.Regularizer):
         self.num_domains = None
         self.domain_dimension = None
         self.sparse_reg = sparse_reg
+        self.domain_number = domain_number
 
         self.orthogonalization_penalty = orthogonalization_penalty
-
         self.similarity_measure = similarity_measure
-
-        self.C_domains = C_domains if self.similarity_measure.lower() != "normed" else None
+        self.C_domains = C_domains if self.similarity_measure.lower() != "projected" else None
 
         self.lambda_alpha = 0.2
         self.lambda_sparse = 0.05
-        self.domain_number = domain_number
         self.mmd_penalty = True
+        self.use_kme_gram = True
 
         # PLACEHOLDER (will be updated throughout the training)
         self.alpha = None
         self.batch_sample = None
-        self.use_kme_gram = True
 
     # for debugging purpose...
     #h = tf.random.normal(shape=(self.domain_basis['domain_0'].numpy().shape[0], input_shape[-1]))
@@ -102,9 +100,10 @@ class DomainOrthogonalRegularizer(tf.keras.regularizers.Regularizer):
 
         if self.domain_dimension is None:
             self.domain_dimension = self.domains[0].shape[0]
+
         #other_domains_list = [self.domains[k] for k in range(len(self.domains)) if k != self.domain_number]
 
-        if self.orthogonalization_penalty.lower() not in ['srip', "so", "mc"]:
+        if self.orthogonalization_penalty.lower() in ['srip', "so", "mc"]:
 
             if self.use_kme_gram:
                 gram_matrix = self.get_kme_gram(weight_matrix)
@@ -141,7 +140,6 @@ class DomainOrthogonalRegularizer(tf.keras.regularizers.Regularizer):
         # MMD REG
         #######################
         if self.mmd_penalty:
-
             if self.sparse_reg:
                 self.mmd = 0.5 * self.get_mmd_penalty(weight_matrix) + (self.lambda_sparse / 2) * reduce_mean(self.kernel.matrix(weight_matrix, weight_matrix)) + self.lambda_alpha * tf.norm(self.alpha_coefficients, ord=1)
 

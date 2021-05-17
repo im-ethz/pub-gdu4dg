@@ -15,7 +15,7 @@ from tensorflow.python.keras import backend as K
 
 import tensorflow_probability as tfp
 
-from Model.DomainAdaptation.domain_adaptation_regularization import DomainOrthogonalRegularizer
+from Model.DomainAdaptation.domain_adaptation_regularization import DomainRegularizer
 
 
 
@@ -35,14 +35,14 @@ class DomainAdaptationLayer(Layer):
           sigma: double, optional
               sigma of the Gaussian kernel function
 
-          similarity_measure : string, in [`normed`,`MMD`,  'IPS']
+          similarity_measure : string, in [`projected`,`MMD`,  'cosine_similarity']
               method how each domain is weighted in the computation of the output
-              normed (default): orthogonal projection of the input into the domains, asuming orthogonal domains
+              projected (default): orthogonal projection of the input into the domains, asuming orthogonal domains
               MMD: Softmax of the MMD of each domain with the
-              IPS: inner product similarity of the input and each domain
+              cosine_similarity: inner product similarity of the input and each domain
 
           softness_param: double, optional
-              used only in case of when similarity_measure is MMD od IPS. Is used as scaling factor in the
+              used only in case of when similarity_measure is MMD od cosine_similarity. Is used as scaling factor in the
               softmax function. A higher value leads to a higher probability for higher values in the softmax function.
 
           num_domains: int
@@ -76,7 +76,7 @@ class DomainAdaptationLayer(Layer):
             >>>                     domain_dimension=25,
             >>>                     softness_param=5,
             >>>                     sigma=1.2,
-            >>>                     similarity_measure='normed',
+            >>>                     similarity_measure='projected',
             >>>                     domain_reg_method='SRIP',
             >>>                     domain_reg_param=1e-4))
 
@@ -89,7 +89,7 @@ class DomainAdaptationLayer(Layer):
                  normalized_kernel=False,
                  amplitude=None,
                  kernel=None,
-                 similarity_measure='normed',  #`MMD` 'IPS'
+                 similarity_measure='projected',  #`MMD` 'cosine_similarity'
                  softness_param=1.0,
                  domain_reg_method="None",
                  domain_reg_param=0.0,
@@ -125,7 +125,7 @@ class DomainAdaptationLayer(Layer):
         self.domain_reg = None
         self.units = units
         self.representer = representer
-        #self.c_trans = True if self.similarity_measure.lower() in ['mmd', 'ips'] else False
+        #self.c_trans = True if self.similarity_measure.lower() in ['mmd', 'cosine_similarity'] else False
         self.c_trans = False
 
     def build(self, input_shape):
@@ -134,13 +134,13 @@ class DomainAdaptationLayer(Layer):
             self.units = input_shape[-1]
 
         if self.domain_reg_param > 0.0:
-            self.domain_basis_reg_dict = {"domain_reg_{}".format(domain_num): DomainOrthogonalRegularizer(domains=None,
-                                                                                                          kernel=self.kernel,
-                                                                                                          domain_number=domain_num,
-                                                                                                          param=self.domain_reg_param,
-                                                                                                          similarity_measure = self.similarity_measure,
-                                                                                                          amplitude=self.amplitude,
-                                                                                                          orthogonalization_penalty=self.domain_reg_method) for domain_num in range(self.num_domains)}
+            self.domain_basis_reg_dict = {"domain_reg_{}".format(domain_num): DomainRegularizer(domains=None,
+                                                                                                kernel=self.kernel,
+                                                                                                domain_number=domain_num,
+                                                                                                param=self.domain_reg_param,
+                                                                                                similarity_measure = self.similarity_measure,
+                                                                                                amplitude=self.amplitude,
+                                                                                                orthogonalization_penalty=self.domain_reg_method) for domain_num in range(self.num_domains)}
 
             self.domain_reg = True
 
@@ -161,7 +161,7 @@ class DomainAdaptationLayer(Layer):
             for domain in range(len(self.domain_basis_reg_dict)):
                 domain_reg_key = "domain_reg_{}".format(domain)
                 self.domain_basis_reg_dict[domain_reg_key].set_domains(list(self.domain_basis.values()))
-                #if self.similarity_measure.lower() in ['ips', 'mmd']:
+                #if self.similarity_measure.lower() in ['cosine_similarity', 'mmd']:
                 #    self.domain_basis_reg_dict[domain_reg_key].set_C(list(self.C_domains.values()))
 
         if self.representer:
@@ -190,10 +190,10 @@ class DomainAdaptationLayer(Layer):
 
     def call(self, h):
         #h = ops.convert_to_tensor(h)
-        if self.similarity_measure == 'normed':
+        if self.similarity_measure == 'projected':
             domain_probability = tf.concat([self.calculate_alpha(h, domain) for domain in self.domain_basis.values()], axis=-1)
-        elif self.similarity_measure == 'IPS':
-            domain_probability = self.IPS_softmax(h)
+        elif self.similarity_measure == 'cosine_similarity':
+            domain_probability = self.cosine_similarity_softmax(h)
         else:
             domain_probability = self.mmd_softmax(h)
 
@@ -204,14 +204,14 @@ class DomainAdaptationLayer(Layer):
                 self.domain_basis_reg_dict[domain_reg_key].set_input(h)
                 self.domain_basis_reg_dict[domain_reg_key].set_alpha_coefficients(domain_probability)
                 self.domain_basis_reg_dict[domain_reg_key].set_param(self.domain_reg_param)
-                #if self.similarity_measure.lower() in ['mmd', 'ips']:
+                #if self.similarity_measure.lower() in ['mmd', 'cosine_similarity']:
                 #    self.domain_basis_reg_dict[domain_reg_key].set_C(list(self.C_domains.values()))
 
 
         domain = list(self.domain_basis.values())[0]
         #f = self.kernel.matrix(h, domain)
         if self.representer:
-            h_matrix_bias_added = [mat_mul(self.kernel.matrix(h, self.domain_basis[domain] ), self.W_domains[domain]) for domain in self.W_domains.keys()]
+            h_matrix_bias_added = [mat_mul(self.kernel.matrix(h, self.domain_basis[domain]), self.W_domains[domain]) for domain in self.W_domains.keys()]
 
         else:
             h_matrix_bias_added = [mat_mul(h, self.W_domains[domain]) for domain in self.W_domains.keys()]
@@ -235,10 +235,16 @@ class DomainAdaptationLayer(Layer):
             h_transformed = [tanh(mat_mul(h, C)) for C in list(self.C_domains.values())]
             domain_probability = tf.transpose(softmax([self.softness_param * self.get_batch_mmd(h_transformed[j], domain=list(self.domain_basis.values())[j]) for j in range(self.num_domains)], axis=0))
         else:
-            domain_probability = tf.transpose(softmax([self.softness_param * self.get_batch_mmd(h, domain=self.domain_basis[domain]) for domain in self.domain_basis.keys()], axis=0))
+            domain_probability = tf.transpose(
+                softmax(
+                    [(-1) * self.softness_param * self.get_batch_mmd(h, domain=self.domain_basis[domain]) for domain in self.domain_basis.keys()]
+                    , axis=0)
+            )
+
+
         return domain_probability
 
-    @tf.function
+    #@tf.function
     def get_batch_mmd(self, h, domain='domain_0'):
         if type(domain) == str:
             temp_1 = tf.linalg.diag_part(self.kernel.matrix(h, h))
@@ -256,17 +262,17 @@ class DomainAdaptationLayer(Layer):
         return mmd
 
     @tf.function
-    def IPS_softmax(self, h):
+    def cosine_similarity_softmax(self, h):
         if self.c_trans:
             h_transformed = [tanh(mat_mul(h, C)) for C in list(self.C_domains.values())]
-            domain_probability = tf.transpose(softmax([self.softness_param * self.get_batch_IPS(h_transformed[j], domain=list(self.domain_basis.values())[j]) for j in range(self.num_domains)], axis=0))
+            domain_probability = tf.transpose(softmax([self.softness_param * self.get_batch_cosine_similarity(h_transformed[j], domain=list(self.domain_basis.values())[j]) for j in range(self.num_domains)], axis=0))
         else:
-            domain_probability = tf.transpose(softmax([self.softness_param * self.get_batch_IPS(h, domain=self.domain_basis[domain]) for domain in self.domain_basis.keys()], axis=0))
+            domain_probability = tf.transpose(softmax([self.softness_param * self.get_batch_cosine_similarity(h, domain=self.domain_basis[domain]) for domain in self.domain_basis.keys()], axis=0))
 
         return domain_probability
 
     @tf.function
-    def get_batch_IPS(self, h, domain='domain_0', cosine_sim=True):
+    def get_batch_cosine_similarity(self, h, domain='domain_0', cosine_sim=True):
         if type(domain) == str:
             if cosine_sim:
                 return reduce_mean(self.kernel.matrix(h, self.domain_basis[domain]), axis=1) / (sqrt(tf.linalg.diag_part(self.kernel.matrix(h, h))) * float(1/self.domain_dimension) * sqrt(reduce_sum(self.kernel.matrix(self.domain_basis[domain], self.domain_basis[domain]))))
@@ -300,7 +306,7 @@ class DomainAdaptationLayer(Layer):
         inner_product = reduce_mean(self.kernel.matrix(h, domain), axis=-1, keepdims=True)
         return inner_product
 
-    #@tf.function
+    @tf.function
     def get_mmd_penalty(self, h, domain_probability=None):
         if domain_probability is not None:
             self.alpha_coefficients = domain_probability
@@ -335,12 +341,12 @@ class DomainAdaptationLayer(Layer):
         return sqrt(reduce_sum(test_mmd_list))
 
 
-    @tf.function
+    #@tf.function
     def get_domain_prob(self, h):
-        if self.similarity_measure == 'normed':
+        if self.similarity_measure == 'projected':
             domain_probability = tf.concat([self.calculate_alpha(h, domain) for domain in self.domain_basis.values()], axis=-1)
-        elif self.similarity_measure == 'IPS':
-            domain_probability = self.IPS_softmax(h)
+        elif self.similarity_measure == 'cosine_similarity':
+            domain_probability = self.cosine_similarity_softmax(h)
         else:
             domain_probability = self.mmd_softmax(h)
 
@@ -425,13 +431,13 @@ class DomainAdaptationLayer(Layer):
     #@tf.function
     def get_domain_probability(self, h):
 
-        if self.similarity_measure.lower() == 'ips':
+        if self.similarity_measure.lower() == 'cosine_similarity':
             if self.c_trans:
                 domain_probability = softmax([self.softness_param * reduce_sum(self.kernel.matrix(tf.tanh(tf.matmul(h, self.C_domains[domain])), self.domain_basis[domain]), axis=-1) for domain in self.domain_basis.keys()], axis=0).numpy()
             else:
                 domain_probability = softmax([self.softness_param * reduce_sum(self.kernel.matrix(h, self.domain_basis[domain]), axis=-1) for domain in self.domain_basis.keys()], axis=0).numpy()
 
-        elif self.similarity_measure == 'normed':
+        elif self.similarity_measure == 'projected':
             alpha_coefficients = [self.calculate_alpha(h, domain) for domain in self.domain_basis.values()]
             domain_probability = reduce_mean(alpha_coefficients, axis=-1).numpy()
 
