@@ -24,6 +24,8 @@ import tensorflow_probability as tfp
 from datetime import datetime
 from sklearn.utils import shuffle
 from tensorflow.python.keras.layers import *
+import matplotlib.pyplot as plt
+
 from tensorflow.python.keras.callbacks import EarlyStopping
 from tensorflow_probability.python.math.psd_kernels.positive_semidefinite_kernel import _SumKernel
 
@@ -37,6 +39,9 @@ abspath = os.path.abspath(__file__)
 os.chdir(os.path.dirname(abspath))
 sys.path.append(os.path.abspath(os.path.join(__file__, '../../..')))
 THIS_FILE = os.path.abspath(__file__)
+
+
+
 
 
 from Model.utils import decode_one_hot_vector

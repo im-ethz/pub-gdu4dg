@@ -192,6 +192,9 @@ class DomainAdaptationLayer(Layer):
         #h = ops.convert_to_tensor(h)
         if self.similarity_measure == 'projected':
             domain_probability = tf.concat([self.calculate_alpha(h, domain) for domain in self.domain_basis.values()], axis=-1)
+            domain_probability = tf.math.divide(domain_probability, reduce_sum(domain_probability, axis=-1, keepdims=True))
+
+
         elif self.similarity_measure == 'cosine_similarity':
             domain_probability = self.cosine_similarity_softmax(h)
         else:
@@ -438,8 +441,9 @@ class DomainAdaptationLayer(Layer):
                 domain_probability = softmax([self.softness_param * reduce_sum(self.kernel.matrix(h, self.domain_basis[domain]), axis=-1) for domain in self.domain_basis.keys()], axis=0).numpy()
 
         elif self.similarity_measure == 'projected':
-            alpha_coefficients = [self.calculate_alpha(h, domain) for domain in self.domain_basis.values()]
-            domain_probability = reduce_mean(alpha_coefficients, axis=-1).numpy()
+            domain_probability = tf.concat([self.calculate_alpha(h, domain) for domain in self.domain_basis.values()], axis=-1)
+            domain_probability = tf.math.divide(domain_probability, reduce_sum(domain_probability, axis=-1, keepdims=True))
+            domain_probability = reduce_mean(domain_probability, axis=-1).numpy()
 
         else:
 
