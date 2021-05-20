@@ -1,22 +1,28 @@
-import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning)
-
 from silence_tensorflow import silence_tensorflow
 silence_tensorflow()
 
 
-import os
-import sys
-#import umap
-import keras
-import logging
 import multiprocessing
+import warnings
+import umap
+import umap.plot
+import skimage
+import hdbscan
 from functools import partial
 
 
+import keras
+
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
+
+
+import os
+import sys
+import logging
+
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 
 import tensorflow as tf
 tf.random.set_seed(1234)
@@ -25,13 +31,12 @@ import tensorflow_probability as tfp
 from datetime import datetime
 from sklearn.utils import shuffle
 from sklearn.metrics.pairwise import euclidean_distances
-
 from tensorflow.python.keras.layers import *
-
-
+import matplotlib.pyplot as plt
 
 from tensorflow.python.keras.callbacks import EarlyStopping
 from tensorflow_probability.python.math.psd_kernels.positive_semidefinite_kernel import _SumKernel
+
 
 logging.disable(logging.WARNING)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -45,14 +50,14 @@ THIS_FILE = os.path.abspath(__file__)
 
 
 
+
+
 from Model.utils import decode_one_hot_vector
 from Visualization.evaluation_plots import plot_TSNE
 from SimulationExperiments.experiment_4_digits.d5_dataloader import load_digits
 
 from Model.DomainAdaptation.DomainAdaptationModel import DomainAdaptationModel
 from Model.DomainAdaptation.domain_adaptation_layer import DomainAdaptationLayer
-from Model.DomainAdaptation.domain_adaptation_callback import DomainCallback
-
 
 #def init_gpu(used_gpus=[2]):
 #    MEMORY_LIMITS = {0: 9000, 1: 9000, 2: 8000, 3: 8000,}
@@ -79,21 +84,17 @@ def init_gpu(gpu, memory):
         try:
             tf.config.experimental.set_visible_devices(gpus[used_gpu], 'GPU')
             tf.config.experimental.set_virtual_device_configuration(gpus[used_gpu], [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=memory)])
+            #tf.config.experimental.set_memory_growth(gpus[used_gpu], True)
         except RuntimeError as e:
             print(e)
 
 init_gpu(gpu=2, memory=10000)
 
-
-'''
-nohup /local/home/euernst/anaconda3/envs/euernst_MT_gpu/bin/python3.8 -u /local/home/euernst/mt-eugen-ernst/SimulationExperiments/experiment_4_digits/digits_5_classification.py > /local/home/euernst/mt-eugen-ernst/SimulationExperiments/simulation_results/experiment_4/nohup.log 2>&1 &
-'''
-
 # file path to the location where the results are stored
-res_file_dir = "/headwind/misc/domain-adaptation/digits/eugen"
+res_file_dir = "/local/home/sfoell/NeurIPS/results/source_combined_sparse_projection_20210517"
 
-SOURCE_SAMPLE_SIZE = 12500
-TARGET_SAMPLE_SIZE = 4500
+SOURCE_SAMPLE_SIZE = 25000
+TARGET_SAMPLE_SIZE = 9000
 img_shape = (32, 32, 3)
 
 
@@ -101,6 +102,7 @@ img_shape = (32, 32, 3)
 class DigitsData(object):
     def __init__(self, test_size=SOURCE_SAMPLE_SIZE):
         self.x_train_dict, self.y_train_dict, self.x_test_dict, self.y_test_dict = load_digits(test_size=test_size)
+
 
 
 def digits_classification(method, TARGET_DOMAIN, single_best=False, single_source_domain=None,
@@ -112,15 +114,17 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                           fine_tune=True,
                           kernel=None,
                           data: DigitsData=None,
-                          run = None):
+                          run = None,
+                          embedding = True):
 
     domain_adaptation_spec_dict = {
-        "num_domains": 3,
+        "num_domains": 10,
         "domain_dim": 10,
-        "sigma": 10.5,
-        'softness_param': 5,
+        "sigma": 7.5,
+        'softness_param': 2,
         "similarity_measure": method,# MMD, IPS
-        "domain_reg_param": 1e-2,
+        "domain_reg_param": 1e-3,
+        #"activation": "tanh",
         "img_shape": img_shape,
         "bias": bias,
         "source_sample_size": SOURCE_SAMPLE_SIZE,
@@ -133,18 +137,15 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
     domain_adaptation_spec_dict["kernel"] = "custom" if kernel is not None else "single"
 
-    print('kernel:')
-    print(domain_adaptation_spec_dict["kernel"])
-
-    # used in case of "normed"
-    domain_adaptation_spec_dict["orth_reg"] = reg = "SO"
+    # used in case of "projected"
+    domain_adaptation_spec_dict["orth_reg"] = reg = "SRIP"
     domain_adaptation_spec_dict['reg_method'] = reg_method = reg if method == 'projected' else 'none'
 
     # training specification
     use_optim = domain_adaptation_spec_dict['use_optim'] = 'adam' #"SGD"
     optimizer = tf.keras.optimizers.SGD(lr) if use_optim.lower() =="sgd" else tf.keras.optimizers.Adam(lr)
 
-    batch_size = domain_adaptation_spec_dict['batch_size'] = 128
+    batch_size = domain_adaptation_spec_dict['batch_size'] = 512
     domain_adaptation_spec_dict['epochs'] = num_epochs = 250
     domain_adaptation_spec_dict['epochs_FT'] = num_epochs_FT = 250
     domain_adaptation_spec_dict['lr'] = lr
@@ -167,14 +168,16 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     # dataset used in K3DA
 
     if (single_best == True) & (SOURCE_DOMAINS[0] == TARGET_DOMAIN[0].lower()):
-        print('exit')
+        print('Source and target domain are the same! Skip!')
         return None
     else:
         x_source_tr = np.concatenate([data.x_train_dict[source.lower()] for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
         y_source_tr = np.concatenate([data.y_train_dict[source.lower()] for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
+
         #tf.data.Dataset.from_tensor_slices((x_source_tr, y_source_tr)).cache().prefetch(buffer_size=tf.data.AUTOTUNE)
 
         x_source_tr, y_source_tr = shuffle(x_source_tr, y_source_tr, random_state=1234)
+
         x_source_te = np.concatenate([data.x_test_dict[source.lower()] for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
         y_source_te = np.concatenate([data.y_test_dict[source.lower()] for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
         x_source_te, y_source_te = shuffle(x_source_te, y_source_te, random_state=1234)
@@ -228,6 +231,8 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         method = "SOURCE_ONLY"
         prediction_layer.add(Dense(10))#, activation=activation, use_bias=bias))
 
+    #
+
     callback = [EarlyStopping(patience=patience, restore_best_weights=True)]
 
     ##########################################
@@ -252,7 +257,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                   )
 
     run_start = datetime.now()
-    domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True, max_sample_size=5000)
+    #domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True, max_sample_size=5000)
     hist = model.fit(x=x_source_tr, y=y_source_tr, epochs=num_epochs, verbose=2,
                      batch_size=batch_size, shuffle=False,
                      validation_data=(x_val, y_val),
@@ -286,8 +291,8 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         save_dir_path = os.path.join(save_dir_path, save_dir_name)
         create_dir_if_not_exists(save_dir_path)
 
-    embedding = False
-    if embedding:
+    #embedding = False
+    if domain_adaptation is False and fine_tune and embedding:
         X_embedded_tr = model.feature_extractor.predict(x_source_tr[0:50000])
         if i == 0:
             pd.DataFrame(X_embedded_tr).to_csv(save_dir_path + '/feature_extractor_' + TARGET_DOMAIN[0] + '_data.csv')
@@ -370,28 +375,39 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     ##########################################
 
     # used only if no DA layer is used in previous stage
+    #fine_tune = False
+
     if domain_adaptation is False and fine_tune:
 
         feature_extractor_filepath = os.path.join(save_dir_path, 'feature_extractor.h5.tmp')
         feature_extractor.save(feature_extractor_filepath)
 
-        for method in ['ips', 'mmd', 'normed']:
-            prediction_layer = tf.keras.Sequential([], name='prediction_layer')
+        for method in ['projected']:
 
-            num_domains = domain_adaptation_spec_dict['num_domains']
+
+            prediction_layer = tf.keras.Sequential([], name='prediction_layer')
+            if domain_adaptation is False and fine_tune and embedding:
+                num_domains = domain_adaptation_spec_dict['num_domains'] = M
 
             feature_extractor = keras.models.load_model(feature_extractor_filepath)
             feature_extractor.trainable = False
+
+            # sigma is estimated based on the median heuristic, with sample size of 5000 features
+            sigma = domain_adaptation_spec_dict['sigma'] = sigma_median(feature_extractor.predict(x_source_tr))
+            print("\n\n\n ESTIMATED SIGMA: {sigma} ".format(sigma=str(np.round(sigma, 3))))
 
             #######################################
             ###     PREDICTION LAYER
             #######################################
             domain_dim = domain_adaptation_spec_dict['domain_dim']
             domain_adaptation_spec_dict["similarity_measure"] = method
+
             domain_reg_param = domain_adaptation_spec_dict["domain_reg_param"]
             softness_param = domain_adaptation_spec_dict["softness_param"]
-            sigma = domain_adaptation_spec_dict['sigma']
-            prediction_layer.add(BatchNormalization())
+            domain_adaptation_spec_dict['reg_method'] = reg_method = reg if method == 'projected' else 'none'
+
+            #sigma = domain_adaptation_spec_dict['sigma']
+            #prediction_layer.add(BatchNormalization())
             prediction_layer.add(DomainAdaptationLayer(num_domains=num_domains,
                                                        domain_dimension=domain_dim,
                                                        softness_param=softness_param,
@@ -412,10 +428,14 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
             model.compile(optimizer=optimizer, loss=tf.keras.losses.CategoricalCrossentropy(from_logits=from_logits), metrics=metrics)
 
+
+            #domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True, max_sample_size=5000)
+
+
             print('\n BEGIN FINE TUNING:\t' + method.upper() + "\t" + TARGET_DOMAIN[0] + "\n")
             hist = model.fit(x=x_source_tr, y=y_source_tr.astype(np.float32), epochs=num_epochs_FT, verbose=2,
                                    batch_size=batch_size, shuffle=False, validation_data=(x_val, y_val),
-                                   callbacks=callback
+                                   callbacks=[callback]
                                    )
             model.evaluate(x_target_te, y_target_te, verbose=2)
 
@@ -595,10 +615,8 @@ if __name__ == "__main__":
     #for i in range(5):
     for i in [0]:
         experiments = []
-        #for method in ['IPS']:
-        #for method in ['MMD']:
-        #for method in ['Normed']:
-        for method in ['projected']:
+        for method in [None]:
+        #for method in ['projected']:
             for kernel in [None]:
                 for TEST_SOURCES in [['mnistm'], ['mnist'], ['syn'], ['svhn'], ['usps']]:
                     for batch_norm in [True]:  # , False]:
@@ -612,7 +630,7 @@ if __name__ == "__main__":
                                     'bias': bias,
                                     'TARGET_DOMAIN': TEST_SOURCES,
                                     #'single_source_domain': single_source,
-                                    'run': i
+                                    'run' : i
                                 })
 
         print(f'Running {len(experiments)} experiments on {len(GPUS)} GPUs')
