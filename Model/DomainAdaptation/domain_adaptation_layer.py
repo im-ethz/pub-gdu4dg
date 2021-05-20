@@ -3,6 +3,7 @@ import tensorflow as tf
 
 from tensorflow.python.keras.layers import Layer
 from tensorflow.python.ops.math_ops import reduce_sum, add, scalar_mul, reduce_mean, tanh, multiply, sqrt
+from tensorflow.python.ops.linalg.linalg import diag_part, diag
 from tensorflow.python.framework import dtypes, ops
 from tensorflow.python.ops import nn
 from tensorflow.python.ops.gen_math_ops import mat_mul
@@ -151,7 +152,7 @@ class DomainAdaptationLayer(Layer):
                                                                          shape=(self.domain_dimension, input_shape[-1],),
                                                                          trainable=True,
                                                                          regularizer=self.domain_basis_reg_dict["domain_reg_{}".format(domain)],
-                                                                         initializer=tf.keras.initializers.RandomNormal()) for domain in range(self.num_domains)}
+                                                                         initializer=tf.keras.initializers.RandomNormal(mean=domain*5, stddev=domain*0.05)) for domain in range(self.num_domains)}
         if self.c_trans:
             self.C_domains = {'domain_{}'.format(domain): self.add_weight(name="C_domain_" + str(domain), shape=(input_shape[-1], input_shape[-1]), trainable=True, initializer=tf.keras.initializers.GlorotUniform()) for domain in range(self.num_domains)}
 
@@ -177,24 +178,23 @@ class DomainAdaptationLayer(Layer):
         super(DomainAdaptationLayer, self).build(input_shape)
 
     # for debugging purpose
-    #h = tf.random.normal(shape=(self.domain_basis['domain_0'].numpy().shape[0], input_shape[-1]))
-    #h = tf.random.normal(shape=(42, input_shape[-1]))
-    #h = tf.random.normal(shape=input_shape)
-    #h = tf.Tensor(input_shape, dtype=np.float32)
-    #x_domain = tf.random.normal(shape=(2000, 45))*1
+    # h = tf.random.normal(shape=(42, input_shape[-1]))
+    # h = tf.random.normal(shape=input_shape)
+    # h = tf.Tensor(input_shape, dtype=np.float32)
+    # x_domain = tf.random.normal(shape=(2000, 45))*1
 
-    #domain = 'domain_0'
-    #domain = 0
+    # domain = 'domain_0'
+    # domain = 0
 
+    # domains = list(self.domain_basis.values())
 
     def call(self, h):
-        #h = ops.convert_to_tensor(h)
         if self.similarity_measure == 'projected':
-            domain_probability = tf.concat([self.calculate_alpha(h, domain) for domain in self.domain_basis.values()], axis=-1)
-            #domain_probability = tf.math.divide(domain_probability, reduce_sum(domain_probability, axis=-1, keepdims=True))
+            domain_probability = self.compute_alpha(h)
 
         elif self.similarity_measure == 'cosine_similarity':
             domain_probability = self.cosine_similarity_softmax(h)
+
         else:
             domain_probability = self.mmd_softmax(h)
 
@@ -209,42 +209,118 @@ class DomainAdaptationLayer(Layer):
                 #    self.domain_basis_reg_dict[domain_reg_key].set_C(list(self.C_domains.values()))
 
 
-        domain = list(self.domain_basis.values())[0]
-        #f = self.kernel.matrix(h, domain)
-        if self.representer:
-            h_matrix_bias_added = [mat_mul(self.kernel.matrix(h, self.domain_basis[domain]), self.W_domains[domain]) for domain in self.W_domains.keys()]
+        # h_matrix_matmul_old = [mat_mul(h, self.W_domains[domain]) for domain in self.W_domains.keys()]
+        # h_matrix_matmul_old = tf.stack([mat_mul(h, self.W_domains[domain]) for domain in self.W_domains.keys()])
+        # h_matrix_bias_added_old = tf.transpose(tf.concat(h_matrix_matmul_old, axis=-1))
+        # h_matrix_matmul = tf.map_fn(lambda W: mat_mul(h, W), elems=tf.stack(list(self.W_domains.values())))
 
-        else:
-            h_matrix_bias_added = [mat_mul(h, self.W_domains[domain]) for domain in self.W_domains.keys()]
+        h_matrix_matmul = tf.vectorized_map(lambda W:mat_mul(h, W),
+                                            elems=tf.stack(list(self.W_domains.values())))
+
+
+
+
+        # h_matrix_matmul_old - h_matrix_matmul
 
         if self.bias:
-            h_matrix_bias_added = [nn.bias_add(h_matrix_bias_added[k], list(self.B_domains.values())[k]) for k in range(self.num_domains)]
+            h_matrix_matmul =tf.squeeze(tf.vectorized_map(lambda t: nn.bias_add(tf.expand_dims(t[0], axis=-1), t[1]),
+                               elems=[h_matrix_matmul, tf.stack(list(self.B_domains.values()))]
+                               ), axis=-1)
+
+            # h_matrix_bias_added_old - h_matrix_matmul
 
         if self.activation is not None:
-            h_prob_weighted = [self.activation(tf.transpose(tf.multiply(tf.transpose(h_matrix_bias_added[k]), domain_probability[:, k]))) for k in range(self.num_domains)]
-        else:
-            h_prob_weighted = [tf.transpose(tf.multiply(tf.transpose(h_matrix_bias_added[k]), domain_probability[:, k])) for k in range(self.num_domains)]
+            if False:
+                h_prob_weighted = tf.map_fn(lambda t:
+                                            self.activation(tf.multiply(t[:, -1], t[:, -2])),
+                                            elems=tf.transpose(tf.stack([tf.concat(h_matrix_matmul, axis=-1), tf.stack(domain_probability)], axis=0))
+                                    )
 
-        h_out = reduce_sum(h_prob_weighted, axis=0)
+
+            h_prob_weighted = tf.vectorized_map(lambda t:
+                                        multiply(tf.transpose(self.activation(t[0])), t[1]),
+                                        #self.activation(t[0]),
+                                        elems=[h_matrix_matmul, tf.transpose(domain_probability)]
+                                        )
+
+
+
+            if False:
+                l_0 = tf.vectorized_map(lambda t:
+                                            #multiply(self.activation(t[0]), t[1]),
+                                            tf.transpose(self.activation(t[0])),
+                                            elems=[h_matrix_matmul, tf.transpose(domain_probability)]
+                                            )
+                l_1 = tf.vectorized_map(lambda t:
+                                            #multiply(self.activation(t[0]), t[1]),
+                                            t[1],
+                                            elems=[h_matrix_matmul, tf.transpose(domain_probability)]
+                                           )
+
+                h_prob_weighted
+                a = multiply(l_0[0], l_1[0])
+                a-h_prob_weighted[0]
+
+        else:
+
+            if False:
+                h_prob_weighted = tf.map_fn(lambda t:
+                                            tf.multiply(t[:, -1], t[:, -2]),
+                                            elems=tf.transpose(tf.stack([tf.concat(h_matrix_matmul, axis=-1), tf.stack(domain_probability)], axis=0))
+                                            )
+
+            h_prob_weighted = tf.vectorized_map(lambda t:
+                                                multiply(tf.transpose(t[0]), t[1]),
+                                                elems=[h_matrix_matmul, tf.transpose(domain_probability)]
+                                                )
+
+        h_out = tf.transpose(reduce_sum(h_prob_weighted, axis=0))
         return h_out
 
+
+    @tf.function
+    def get_kme_gram(self):
+        domains = tf.stack(list(self.domain_basis.values()))
+        kme_gram_matrix = tf.map_fn(fn=lambda d_i: tf.map_fn(fn=lambda d_j: reduce_mean(self.kernel.matrix(d_i, d_j)), elems=domains), elems=domains,parallel_iterations=10)
+        return kme_gram_matrix
 
 
     @tf.function
     def mmd_softmax(self, h):
         if self.c_trans:
             h_transformed = [tanh(mat_mul(h, C)) for C in list(self.C_domains.values())]
-            domain_probability = tf.transpose(softmax([self.softness_param * self.get_batch_mmd(h_transformed[j], domain=list(self.domain_basis.values())[j]) for j in range(self.num_domains)], axis=0))
+            mmd = tf.map_fn(lambda d: (diag_part(self.kernel.matrix(h, h)) - 2 * reduce_mean(self.kernel.matrix(h, d), axis=1) + reduce_mean(self.kernel.matrix(d, d))), elems=tf.stack(h_transformed))
         else:
-            domain_probability = tf.transpose(
-                softmax(
-                    [(-1) * self.softness_param * self.get_batch_mmd(h, domain=self.domain_basis[domain]) for domain in self.domain_basis.keys()]
-                    , axis=0)
-            )
+            mmd = tf.map_fn(lambda d: (diag_part(self.kernel.matrix(h, h)) - 2 * reduce_mean(self.kernel.matrix(h, d), axis=1) + reduce_mean(self.kernel.matrix(d, d))), elems=tf.stack(list(self.domain_basis.values())))
+
+        domain_probability_mmd = tf.transpose(softmax((-1) * self.softness_param * mmd, axis=0))
+
+        return domain_probability_mmd
+
+    @tf.function
+    def cosine_similarity_softmax(self, h):
+        if self.c_trans:
+            h_transformed = [tanh(mat_mul(h, C)) for C in list(self.C_domains.values())]
+            cosine_sim = tf.map_fn(lambda d: self.softness_param * reduce_mean(self.kernel.matrix(h, d), axis=1) / (sqrt(tf.linalg.diag_part(self.kernel.matrix(h, h))) * float(1 / self.domain_dimension) * sqrt(reduce_sum(self.kernel.matrix(d, d)))), elems=tf.stack(h_transformed))
+        else:
+            cosine_sim = tf.map_fn(lambda d: self.softness_param * reduce_mean(self.kernel.matrix(h, d), axis=1) / (sqrt(tf.linalg.diag_part(self.kernel.matrix(h, h))) * float(1 / self.domain_dimension) * sqrt(reduce_sum(self.kernel.matrix(d, d)))), elems=tf.stack(list(self.domain_basis.values())))
+
+        domain_probability_cosine_sim = tf.transpose(softmax(cosine_sim, axis=0))
+
+        return domain_probability_cosine_sim
+
+    @tf.function
+    def compute_alpha(self, h):
+        alpha = tf.squeeze(tf.map_fn(lambda t: reduce_mean(self.kernel.matrix(h, t), axis=-1, keepdims=True),
+                                     elems=tf.stack(list(self.domain_basis.values()))), axis=-1)
+        return tf.transpose(alpha)
 
 
-        return domain_probability
 
+    ####################
+    ###     OLD     ####
+    ####################
+    # not used
     #@tf.function
     def get_batch_mmd(self, h, domain='domain_0'):
         if type(domain) == str:
@@ -259,19 +335,14 @@ class DomainAdaptationLayer(Layer):
                 temp_3 = tf.squeeze(scalar_mul(tf.reduce_mean(self.kernel.matrix(domain, domain)), tf.ones(shape=(1, 1))), axis=-1)
             else:
                 temp_3 = tf.squeeze(scalar_mul(tf.reduce_mean(self.kernel.matrix(domain, domain)), tf.ones(shape=(h.shape[0], 1))), axis=-1)
+
             mmd = temp_1 - 2 * temp_2 + temp_3
         return mmd
+    # not used
+    def cosine_similarity(self, h, domain):
+        reduce_mean(self.kernel.matrix(h, domain), axis=1) / (sqrt(tf.linalg.diag_part(self.kernel.matrix(h, h))) * float(1 / self.domain_dimension) * sqrt(reduce_sum(self.kernel.matrix(domain, domain))))
 
-    @tf.function
-    def cosine_similarity_softmax(self, h):
-        if self.c_trans:
-            h_transformed = [tanh(mat_mul(h, C)) for C in list(self.C_domains.values())]
-            domain_probability = tf.transpose(softmax([self.softness_param * self.get_batch_cosine_similarity(h_transformed[j], domain=list(self.domain_basis.values())[j]) for j in range(self.num_domains)], axis=0))
-        else:
-            domain_probability = tf.transpose(softmax([self.softness_param * self.get_batch_cosine_similarity(h, domain=self.domain_basis[domain]) for domain in self.domain_basis.keys()], axis=0))
-
-        return domain_probability
-
+    # not used
     @tf.function
     def get_batch_cosine_similarity(self, h, domain='domain_0', cosine_sim=True):
         if type(domain) == str:
@@ -284,7 +355,7 @@ class DomainAdaptationLayer(Layer):
                 return reduce_mean(self.kernel.matrix(h, domain), axis=1) / (sqrt(tf.linalg.diag_part(self.kernel.matrix(h, h))) * float(1/self.domain_dimension) * sqrt(reduce_sum(self.kernel.matrix(domain, domain))))
             else:
                 return reduce_mean(self.kernel.matrix(h, domain), axis=1)
-
+    # not used in here
     @tf.function
     def inner_product_domain(self, domain_1, domain_2):
         inner_product = reduce_mean(self.kernel.matrix(domain_1, domain_2))
@@ -295,17 +366,12 @@ class DomainAdaptationLayer(Layer):
         squared_norm = reduce_mean(self.kernel.matrix(domain, domain))
         return squared_norm
 
-    @tf.function
-    def calculate_alpha(self, h, domain):
-        squared_norm = self.squared_norm_domain(domain)
-        IP_batch_domain = self.inner_product_batch_domain(h, domain)
-        alpha = IP_batch_domain / squared_norm
-        return alpha
-
+    # not used here
     @tf.function
     def inner_product_batch_domain(self, h, domain):
         inner_product = reduce_mean(self.kernel.matrix(h, domain), axis=-1, keepdims=True)
         return inner_product
+
 
     @tf.function
     def get_mmd_penalty(self, h, domain_probability=None):
@@ -345,7 +411,7 @@ class DomainAdaptationLayer(Layer):
     #@tf.function
     def get_domain_prob(self, h):
         if self.similarity_measure == 'projected':
-            domain_probability = tf.concat([self.calculate_alpha(h, domain) for domain in self.domain_basis.values()], axis=-1)
+            domain_probability = self.compute_alpha(h)
         elif self.similarity_measure == 'cosine_similarity':
             domain_probability = self.cosine_similarity_softmax(h)
         else:
@@ -429,7 +495,7 @@ class DomainAdaptationLayer(Layer):
 
 
     def get_kme_inner_product(self, domain_i, domain_j):
-        return  reduce_mean(self.kernel.matrix(domain_i, domain_j))
+        return reduce_mean(self.kernel.matrix(domain_i, domain_j))
 
         def get_kme_inner_product(domains):
             domain_i, domain_j = domains

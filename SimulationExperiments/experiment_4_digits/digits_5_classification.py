@@ -1,30 +1,23 @@
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+
 from silence_tensorflow import silence_tensorflow
 silence_tensorflow()
 
 
-import multiprocessing
-import warnings
-import umap
-import umap.plot
-import skimage
-import hdbscan
-from functools import partial
-
-
-import keras
-
-warnings.filterwarnings("ignore", category=DeprecationWarning)
-
-
-
 import os
 import sys
+import keras
+import skimage
 import logging
+import multiprocessing
+
 
 import numpy as np
 import pandas as pd
 
 import tensorflow as tf
+
 tf.random.set_seed(1234)
 import tensorflow_probability as tfp
 
@@ -47,8 +40,6 @@ abspath = os.path.abspath(__file__)
 os.chdir(os.path.dirname(abspath))
 sys.path.append(os.path.abspath(os.path.join(__file__, '../../..')))
 THIS_FILE = os.path.abspath(__file__)
-
-
 
 
 
@@ -88,10 +79,10 @@ def init_gpu(gpu, memory):
         except RuntimeError as e:
             print(e)
 
-init_gpu(gpu=2, memory=10000)
+init_gpu(gpu=1, memory=10000)
 
 # file path to the location where the results are stored
-res_file_dir = "/local/home/sfoell/NeurIPS/results/source_combined_sparse_projection_20210517"
+res_file_dir = "/headwind/misc/domain-adaptation/digits/eugen"
 
 SOURCE_SAMPLE_SIZE = 25000
 TARGET_SAMPLE_SIZE = 9000
@@ -104,7 +95,6 @@ class DigitsData(object):
         self.x_train_dict, self.y_train_dict, self.x_test_dict, self.y_test_dict = load_digits(test_size=test_size)
 
 
-
 def digits_classification(method, TARGET_DOMAIN, single_best=False, single_source_domain=None,
                           batch_norm=False,
                           lr=0.001,
@@ -114,17 +104,16 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                           fine_tune=True,
                           kernel=None,
                           data: DigitsData=None,
-                          run = None,
-                          embedding = True):
+                          run=None,
+                          embedding=True):
 
     domain_adaptation_spec_dict = {
-        "num_domains": 10,
+        "num_domains": 3,
         "domain_dim": 10,
         "sigma": 7.5,
         'softness_param': 2,
-        "similarity_measure": method,# MMD, IPS
+        "similarity_measure": method,
         "domain_reg_param": 1e-3,
-        #"activation": "tanh",
         "img_shape": img_shape,
         "bias": bias,
         "source_sample_size": SOURCE_SAMPLE_SIZE,
@@ -133,7 +122,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
 
     #architecture used as feature extractor
-    architecture = domain_adaptation_spec_dict["architecture"] ="DomainNet"# "DomainNet"# "LeNet", "DomainNet"
+    architecture = domain_adaptation_spec_dict["architecture"] ="DomainNet" # "DomainNet"# "LeNet"
 
     domain_adaptation_spec_dict["kernel"] = "custom" if kernel is not None else "single"
 
@@ -291,33 +280,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         save_dir_path = os.path.join(save_dir_path, save_dir_name)
         create_dir_if_not_exists(save_dir_path)
 
-    #embedding = False
-    if domain_adaptation is False and fine_tune and embedding:
-        X_embedded_tr = model.feature_extractor.predict(x_source_tr[0:50000])
-        if i == 0:
-            pd.DataFrame(X_embedded_tr).to_csv(save_dir_path + '/feature_extractor_' + TARGET_DOMAIN[0] + '_data.csv')
-
-        embedder = umap.UMAP(n_neighbors=30, min_dist=0.1, random_state=42)
-
-        #mapper = embedder.fit(X_embedded_tr)
-        #umap.plot.connectivity(mapper)
-        #plt.show()
-
-        clusterable_embedding = embedder.fit_transform(X_embedded_tr)
-        clusterer = hdbscan.HDBSCAN(min_samples=100, cluster_selection_epsilon=0.5, min_cluster_size=1000)
-        clusterer.fit(clusterable_embedding)
-        clusterer.labels_.max()
-        labels = clusterer.fit_predict(clusterable_embedding)
-
-        plt.figure(figsize=(10, 10))
-        plt.scatter(clusterable_embedding[:, 0], clusterable_embedding[:, 1], c=labels, s=0.1, cmap='Spectral')
-        clustered = (labels >= 0)
-        print(np.sum(clustered) / X_embedded_tr.shape[0])
-        plt.title('Estimated number of clusters: %d' % clusterer.labels_.max())
-        plt.show()
-
-        print('Estimated number of clusters: %d' % clusterer.labels_.max())
-        M = clusterer.labels_.max()
+    embedding = False
 
     if save_plot or save_feature:
         X_DATA = model.predict(x_target_te)
@@ -387,7 +350,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
             prediction_layer = tf.keras.Sequential([], name='prediction_layer')
             if domain_adaptation is False and fine_tune and embedding:
-                num_domains = domain_adaptation_spec_dict['num_domains'] = M
+                num_domains = domain_adaptation_spec_dict['num_domains'] = 10
 
             feature_extractor = keras.models.load_model(feature_extractor_filepath)
             feature_extractor.trainable = False
@@ -615,7 +578,7 @@ if __name__ == "__main__":
     #for i in range(5):
     for i in [0]:
         experiments = []
-        for method in [None]:
+        for method in ['projected']:
         #for method in ['projected']:
             for kernel in [None]:
                 for TEST_SOURCES in [['mnistm'], ['mnist'], ['syn'], ['svhn'], ['usps']]:

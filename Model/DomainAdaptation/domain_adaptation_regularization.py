@@ -105,15 +105,14 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
         #other_domains_list = [self.domains[k] for k in range(len(self.domains)) if k != self.domain_number]
         if self.orthogonalization_penalty.lower() in ['srip', "so", "mc"]:
             if self.use_kme_gram:
-
                 domains = tf.stack(self.domains + [weight_matrix])
-                gram_matrix = tf.map_fn(fn= lambda d: tf.map_fn(fn=lambda t: reduce_mean(self.kernel.matrix(t, d)), elems=domains), elems=domains, parallel_iterations=10)
+                gram_matrix = tf.map_fn(fn=lambda d: tf.map_fn(fn=lambda t: reduce_mean(self.kernel.matrix(t, d)), elems=domains), elems=domains, parallel_iterations=10)
 
             else:
                 domain_vectors = tf.concat(self.domains + [weight_matrix], axis=0)
                 gram_matrix = self.kernel.matrix(domain_vectors, domain_vectors)
 
-        gram_diag = tf.linalg.diag(diag_part(gram_matrix))
+            gram_diag = tf.linalg.diag(diag_part(gram_matrix))
 
 
         if self.orthogonalization_penalty.lower() == 'srip':
