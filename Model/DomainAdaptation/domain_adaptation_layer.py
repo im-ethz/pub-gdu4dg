@@ -70,8 +70,8 @@ class DomainAdaptationLayer(Layer):
           --------
             >>> # simple example how the layer can be included in a Sequential model
             >>> model = Sequential(Input())
-            >>> model = Sequential(Dense(100))
-            >>> model = Sequential(Dense(10))
+            >>> model.add(Dense(100))
+            >>> model.add(Dense(10))
             >>> model.add(DomainAdaptationLayer(num_domains=42,
             >>>                     domain_dimension=25,
             >>>                     softness_param=5,
@@ -84,7 +84,6 @@ class DomainAdaptationLayer(Layer):
     def __init__(self,
                  num_domains,
                  domain_dimension,
-
                  sigma=0.5,
                  normalized_kernel=False,
                  amplitude=None,
@@ -193,7 +192,6 @@ class DomainAdaptationLayer(Layer):
         if self.similarity_measure == 'projected':
             domain_probability = tf.concat([self.calculate_alpha(h, domain) for domain in self.domain_basis.values()], axis=-1)
             #domain_probability = tf.math.divide(domain_probability, reduce_sum(domain_probability, axis=-1, keepdims=True))
-
 
         elif self.similarity_measure == 'cosine_similarity':
             domain_probability = self.cosine_similarity_softmax(h)
@@ -427,6 +425,27 @@ class DomainAdaptationLayer(Layer):
         domain_orthogonality_penalty = reduce_mean(domain_gram_matrix)
         return domain_orthogonality_penalty
 
+    #kme_matrix = tf.map_fn(fn= lambda d: tf.map_fn(fn=lambda t: reduce_mean(self.kernel.matrix(t, d)), elems=domains), elems=domains, parallel_iterations=10)
+
+
+    def get_kme_inner_product(self, domain_i, domain_j):
+        return  reduce_mean(self.kernel.matrix(domain_i, domain_j))
+
+        def get_kme_inner_product(domains):
+            domain_i, domain_j = domains
+            return  reduce_mean(self.kernel.matrix(domain_i, domain_j))
+
+
+    def kme_gram(self):
+
+        domains = np.array([[domain_i, domain_j] for domain_i in self.domains for domain_j in self.domains])
+
+        from itertools import product
+        a = list(product(list(self.domain_basis.values()), list(self.domain_basis.values())))
+
+        self.kernel.matrix(domains, domains)
+
+        b = tf.map_fn(fn=lambda domain: reduce_mean(self.kernel.matrix(domain, domain)), elems=tf.stack(domains), swap_memory=True, infer_shape=False, parallel_iterations=10)
 
     def get_domain_basis(self):
         return {domain: self.domain_basis[domain].numpy() for domain in self.domain_basis.keys()}
