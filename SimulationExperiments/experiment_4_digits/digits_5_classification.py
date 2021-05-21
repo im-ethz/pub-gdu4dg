@@ -108,7 +108,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                           embedding=True):
 
     domain_adaptation_spec_dict = {
-        "num_domains": 3,
+        "num_domains": 5,
         "domain_dim": 10,
         "sigma": 7.5,
         'softness_param': 2,
@@ -176,6 +176,10 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         y_target_te = np.concatenate([data.y_test_dict[source] for source in TARGET_DOMAIN], axis=0)
         x_target_te, y_target_te = shuffle(x_target_te, y_target_te, random_state=1234)
 
+
+
+        x_val, y_val = shuffle(x_target_te, y_target_te, random_state=1234)
+
         print("\n FINISHED LOADING DIGITS")
 
 
@@ -203,7 +207,9 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         similarity_measure = domain_adaptation_spec_dict["similarity_measure"]
         domain_reg_param = domain_adaptation_spec_dict["domain_reg_param"]
         softness_param = domain_adaptation_spec_dict["softness_param"]
-        prediction_layer.add(BatchNormalization())
+
+        #prediction_layer.add(BatchNormalization())
+
         prediction_layer.add(DomainAdaptationLayer(num_domains=num_domains,
                                         domain_dimension=domain_dim,
                                         softness_param=softness_param,
@@ -578,7 +584,7 @@ if __name__ == "__main__":
     #for i in range(5):
     for i in [0]:
         experiments = []
-        for method in ['projected']:
+        for method in ['mmd']:
         #for method in ['projected']:
             for kernel in [None]:
                 for TEST_SOURCES in [['mnistm'], ['mnist'], ['syn'], ['svhn'], ['usps']]:

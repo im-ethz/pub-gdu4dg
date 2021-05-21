@@ -1,8 +1,12 @@
+import warnings
+warnings.filterwarnings('ignore')
+
 import numpy as np
 import tensorflow as tf
 
-from tensorflow.python.ops.math_ops import reduce_sum, reduce_prod, reduce_mean, scalar_mul, add, tanh, multiply, sqrt
+from tensorflow.python.ops.math_ops import reduce_sum, reduce_prod, reduce_mean, scalar_mul, add, tanh, multiply, sqrt, mat_mul
 from tensorflow.python.ops.nn_ops import softmax
+from tensorflow.python.ops.array_ops import stack
 from tensorflow.python.ops.linalg.linalg import diag_part
 
 
@@ -85,7 +89,7 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
 
     # for debugging purpose...
     #h = tf.random.normal(shape=(self.domain_basis['domain_0'].numpy().shape[0], input_shape[-1]))
-    #h = tf.random.normal(shape=(42, self.domains[0].shape[1]))
+    # h = tf.random.normal(shape=(42, self.domains[0].shape[1]))
     # self.batch_data = h
     #h = tf.Tensor(None, dtype=np.float32)
     #x_domain = tf.random.normal(shape=(2000, 45))*1
@@ -94,25 +98,16 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
     #domain = 0
 
     def __call__(self, weight_matrix):
-
-
         if self.num_domains is None:
             self.num_domains = len(self.domains)
 
         if self.domain_dimension is None:
             self.domain_dimension = self.domains[0].shape[0]
 
-        #other_domains_list = [self.domains[k] for k in range(len(self.domains)) if k != self.domain_number]
         if self.orthogonalization_penalty.lower() in ['srip', "so", "mc"]:
-            if self.use_kme_gram:
-                domains = tf.stack(self.domains + [weight_matrix])
-                gram_matrix = tf.map_fn(fn=lambda d: tf.map_fn(fn=lambda t: reduce_mean(self.kernel.matrix(t, d)), elems=domains), elems=domains, parallel_iterations=10)
-
-            else:
-                domain_vectors = tf.concat(self.domains + [weight_matrix], axis=0)
-                gram_matrix = self.kernel.matrix(domain_vectors, domain_vectors)
-
-            gram_diag = tf.linalg.diag(diag_part(gram_matrix))
+                domains = self.domains + [weight_matrix]
+                self.gram_matrix = gram_matrix = tf.map_fn(fn=lambda d_j: tf.map_fn(fn=lambda d_k: reduce_mean(self.kernel.matrix(d_j, d_k)), elems=stack(domains)), elems=stack(domains))
+                self.gram_diag = gram_diag = tf.linalg.diag(diag_part(gram_matrix))
 
 
         if self.orthogonalization_penalty.lower() == 'srip':
@@ -157,20 +152,76 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
                 'MMD': self.domain_mmd
                 }
 
+
+
+
+    @tf.function
+    def compute_alpha(self, h, domains=None):
+        if domains is None:
+            domains = list(self.domain_basis.values())
+
+        squared_kme = diag_part(self.get_kme_gram(domains=domains))
+
+        if False:
+            alpha = tf.squeeze(tf.map_fn(lambda d: reduce_mean(self.kernel.matrix(h, d), axis=-1, keepdims=True),
+                                         elems=stack(list(self.domain_basis.values()))), axis=-1)
+
+        alpha = tf.squeeze(tf.vectorized_map(lambda d: reduce_mean(self.kernel.matrix(h, d[0])/d[1], axis=-1, keepdims=True),
+                                     elems=[stack(domains), squared_kme]), axis=-1)
+
+
+        return tf.transpose(alpha)
+
+
+    @tf.function
+    def get_kme_gram(self, domains=None):
+        kme_gram_matrix = tf.map_fn(fn=lambda d_i: tf.map_fn(fn=lambda d_j: reduce_mean(self.kernel.matrix(d_i, d_j)), elems=stack(domains)), elems=stack(domains), parallel_iterations=10)
+
+        return kme_gram_matrix
+
+    @tf.function
+    def get_kme_squared_norm(self, domains=None):
+        if domains is None:
+            domains = list(self.domain_basis.values())
+
+        squared_kme_norm = tf.map_fn(fn=lambda d_j: reduce_mean(self.kernel.matrix(d_j, d_j)), elems=stack(domains))
+
+        return squared_kme_norm
+
+
+
     #@tf.function
     def get_mmd_penalty(self, weight_matrix):
-        # (1)
-        pen_1 = float(1 / self.num_domains + 1) * reduce_mean(diag_part(self.kernel.matrix(self.batch_data, self.batch_data)))
-        # (2)
-        pen_2 = reduce_mean(multiply(self.alpha_coefficients[:, self.domain_number], reduce_mean(self.kernel.matrix(self.batch_data, weight_matrix), axis=-1)))
-        # (3)
-        pen_3 = reduce_mean(
-        [reduce_mean(self.kernel.matrix(weight_matrix, self.domains[k])) * reduce_sum(tf.matmul(tf.expand_dims(self.alpha_coefficients[:, self.domain_number], axis=-1), tf.expand_dims(self.alpha_coefficients[:, k], axis=-1), transpose_b=True)) for k in range(len(self.domains))] \
-        +
-        [reduce_mean(self.kernel.matrix(weight_matrix, weight_matrix)) * reduce_sum(tf.matmul(tf.expand_dims(self.alpha_coefficients[:, self.domain_number], axis=-1), tf.expand_dims(self.alpha_coefficients[:, self.domain_number], axis=-1), transpose_b=True))]
-        )
 
-        return sqrt(pen_1 + float(-2.0) * pen_2 + pen_3)
+        domains = self.domains + [weight_matrix]
+        # (1)
+        # pen_1_old = float(1 / self.num_domains + 1) * reduce_mean(diag_part(self.kernel.matrix(self.batch_data, self.batch_data)))
+        pen_1 = diag_part(self.kernel.matrix(self.batch_data, self.batch_data))
+        # (2)
+        # pen_2_old = reduce_mean(multiply(self.alpha_coefficients[:, self.domain_number], reduce_mean(self.kernel.matrix(self.batch_data, weight_matrix), axis=-1)))
+        pen_2 = reduce_mean(
+            tf.vectorized_map(lambda d:
+                              reduce_mean(self.kernel.matrix(d[0], self.batch_data), axis=0), # / d[1],
+                              elems=[domains, self.get_kme_squared_norm(domains)])
+            , axis=0)
+
+
+        # (3)
+        #pen_3 = reduce_mean(
+        #[reduce_mean(self.kernel.matrix(weight_matrix, self.domains[k])) * reduce_sum(tf.matmul(tf.expand_dims(self.alpha_coefficients[:, self.domain_number], axis=-1), tf.expand_dims(self.alpha_coefficients[:, k], axis=-1), transpose_b=True)) for k in range(len(self.domains))] \
+        #+
+        #[reduce_mean(self.kernel.matrix(weight_matrix, weight_matrix)) * reduce_sum(tf.matmul(tf.expand_dims(self.alpha_coefficients[:, self.domain_number], axis=-1), tf.expand_dims(self.alpha_coefficients[:, self.domain_number], axis=-1), transpose_b=True))]
+        #)
+
+        #d_j_0 = domains[0]
+        #d_j_1 = self.alpha_coefficients[0]
+        #d_k_1 = self.alpha_coefficients[1]
+        #multiply(d_j_1, d_k_1)
+
+        pen_3 = reduce_sum(tf.vectorized_map(lambda d_j: reduce_sum(tf.vectorized_map(lambda d_k: multiply(d_j[1], d_k[1]) * reduce_mean(self.kernel.matrix(d_j[0], d_k[0])), elems=[domains, self.alpha_coefficients]), axis=0), elems=[domains, self.alpha_coefficients]), axis=-1)
+
+
+        return sqrt(reduce_mean(pen_1) + float(-2.0) * reduce_mean(pen_2) + reduce_mean(pen_3))
 
     def set_domains(self, domains):
         self.domains = domains
@@ -192,27 +243,6 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
 
     def set_param(self, param):
         self.param = param
-
-    #@tf.function
-    def get_kme_gram(self, weight_matrix):
-        from datetime import datetime
-        start = datetime.now()
-        kme_gram_list = []
-        for i in range(self.num_domains + 1):
-            kme_gram_row_list = []
-            for j in range(self.num_domains + 1):
-                domain_i = weight_matrix if i == self.num_domains else self.domains[i]
-                domain_j = weight_matrix if j == self.num_domains else self.domains[j]
-                #print("i: {i}, j: {j}, duration:{dur}".format(i=i, j=j, dur=datetime.now()-start))
-                start = datetime.now()
-
-                kme_gram_row_list.append(reduce_mean(self.kernel.matrix(domain_i, domain_j)))
-
-            kme_gram_row_tensor = tf.stack(kme_gram_row_list, axis=0)
-            kme_gram_list.append(kme_gram_row_tensor)
-
-        kme_gram_tensor = tf.stack(kme_gram_list, axis=0)
-        return kme_gram_tensor
 
 class KMEOrthogonalityRegularizer(tf.keras.regularizers.Regularizer):
     def __init__(self, param=0.01, kernel=None, domains=None):
