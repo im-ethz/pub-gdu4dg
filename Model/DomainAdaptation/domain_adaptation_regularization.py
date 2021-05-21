@@ -5,10 +5,10 @@ import numpy as np
 import tensorflow as tf
 
 from tensorflow.python.ops.math_ops import reduce_sum, reduce_prod, reduce_mean, scalar_mul, add, tanh, multiply, sqrt, mat_mul
-from tensorflow.python.ops.nn_ops import softmax
-from tensorflow.python.ops.array_ops import stack, transpose
+from tensorflow.python.ops.array_ops import stack, transpose, squeeze
 from tensorflow.python.ops.linalg.linalg import diag_part
-
+from tensorflow.python.ops.nn_ops import softmax
+from tensorflow.python.ops.parallel_for.control_flow_ops import vectorized_map
 
 class DomainRegularizer(tf.keras.regularizers.Regularizer):
     """
@@ -62,7 +62,8 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
                  orth_pen_method='SRIP',
                  lambda_OLS=1e-2,
                  lambda_sparse=0.05,
-                 lambda_orth=0.2
+                 lambda_orth=0.2,
+                 softness_param=1
                  ):
 
 
@@ -73,6 +74,9 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
         self.domain_number = domain_number
 
         self.similarity_measure = similarity_measure
+        self.softness_param = softness_param
+
+
         # use orthogonal penalty only in case of projection
         self.orth_pen_method = orth_pen_method if similarity_measure.lower() != "projection" else "NONE"
 
@@ -82,7 +86,7 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
 
         # PLACEHOLDER (will be updated throughout the training)
         self.alpha = None
-        self.batch_sample = None
+        self.h = None
 
     # for debugging purpose...
     #h = tf.random.normal(shape=(self.domain_basis['domain_0'].numpy().shape[0], input_shape[-1]))
@@ -135,7 +139,7 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
 
 
         # final output
-        self.domain_penalty =  self.lambda_OLS * self.OLS_penalty + self.lambda_sparse * self.sparse_penalty + self.lambda_orth * self.orthogonal_penalty
+        self.domain_penalty = (1/(self.num_domains + 1)) * (self.lambda_OLS * self.OLS_penalty + self.lambda_sparse * self.sparse_penalty + self.lambda_orth * self.orthogonal_penalty)
 
         return self.domain_penalty
 
@@ -144,23 +148,14 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
                 'MMD': self.domain_mmd
                 }
 
-
     @tf.function
-    def compute_alpha(self, h, domains=None):
+    def get_kme_gram(self, domains=None):
         if domains is None:
             domains = list(self.domain_basis.values())
 
-        squared_kme = diag_part(self.get_kme_gram(domains=domains))
-
-        alpha = tf.squeeze(tf.vectorized_map(lambda d: reduce_mean(self.kernel.matrix(h, d[0])/d[1], axis=-1, keepdims=True),
-                                     elems=[stack(domains), squared_kme]), axis=-1)
-
-        return tf.transpose(alpha)
-
-
-    @tf.function
-    def get_kme_gram(self, domains=None):
-        kme_gram_matrix = tf.map_fn(fn=lambda d_i: tf.map_fn(fn=lambda d_j: reduce_mean(self.kernel.matrix(d_i, d_j)), elems=stack(domains)), elems=stack(domains), parallel_iterations=10)
+        kme_gram_matrix = tf.map_fn(
+            fn=lambda d_i: tf.map_fn(fn=lambda d_j: reduce_mean(self.kernel.matrix(d_i, d_j)), elems=stack(domains)),
+            elems=stack(domains), parallel_iterations=10)
 
         return kme_gram_matrix
 
@@ -173,20 +168,73 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
 
         return squared_kme_norm
 
+    @tf.function
+    def get_domain_prob(self, h, domains=None):
+        if self.similarity_measure == 'projected':
+            domain_probability = self.compute_alpha(h, domains=domains)
+        elif self.similarity_measure == 'cosine_similarity':
+            domain_probability = self.cosine_similarity_softmax(h, domains=domains)
+        else:
+            domain_probability = self.mmd_softmax(h, domains=domains)
+
+        return domain_probability
+
+    @tf.function
+    def mmd_softmax(self, h, domains=None):
+        if domains is None:
+            domains = list(self.domain_basis.values())
+
+        mmd = tf.map_fn(lambda d: (diag_part(self.kernel.matrix(h, h)) - 2 * reduce_mean(self.kernel.matrix(h, d),
+                                                                                         axis=1) + reduce_mean(
+            self.kernel.matrix(d, d))), elems=stack(domains))
+
+        domain_probability_mmd = transpose(softmax((-1) * self.softness_param * mmd, axis=0))
+
+        return domain_probability_mmd
+
+    @tf.function
+    def cosine_similarity_softmax(self, h, domains=None):
+        if domains is None:
+            domains = list(self.domain_basis.values())
+
+        cosine_sim = tf.map_fn(lambda d: self.softness_param * reduce_mean(self.kernel.matrix(h, d), axis=1) / (
+                    sqrt(tf.linalg.diag_part(self.kernel.matrix(h, h))) * float(1 / self.domain_dimension) * sqrt(
+                reduce_sum(self.kernel.matrix(d, d)))), elems=stack(domains))
+
+        domain_probability_cosine_sim = transpose(softmax(cosine_sim, axis=0))
+
+        return domain_probability_cosine_sim
+
+    @tf.function
+    def compute_alpha(self, h, domains=None):
+        if domains is None:
+            domains = list(self.domain_basis.values())
+
+        squared_kme = diag_part(self.get_kme_gram(domains=domains))
+
+        alpha = squeeze(
+            vectorized_map(lambda d: reduce_mean(self.kernel.matrix(h, d[0]) / d[1], axis=-1, keepdims=True),
+                           elems=[stack(domains), squared_kme]), axis=-1)
+
+        return transpose(alpha)
+
     #@tf.function
     def get_OLS_penalty(self, weight_matrix):
 
         domains = self.domains + [weight_matrix]
+        alpha_coefficients = transpose(self.get_domain_prob(self.h, domains))
+
         # (1)
-        pen_1 = diag_part(self.kernel.matrix(self.batch_data, self.batch_data))
+        pen_1 = diag_part(self.kernel.matrix(self.h, self.h))
+
         # (2)
-        pen_2 = reduce_mean(transpose(tf.vectorized_map(lambda d: scalar_mul((1/d[1]), reduce_mean(self.kernel.matrix(d[0], self.batch_data), axis=0)), elems=[transpose(stack(domains)), transpose(self.get_kme_squared_norm(domains))])), axis=-1)
+        pen_2 = reduce_mean(vectorized_map(lambda d:  multiply(d[1], reduce_mean(self.kernel.matrix(d[0], self.h), axis=0)), elems=[stack(domains), alpha_coefficients]))
+
         # (3)
-        pen_3 = reduce_mean(reduce_sum(transpose(tf.vectorized_map(lambda d_j: d_j[1] * reduce_sum(transpose(
-            tf.vectorized_map(lambda d_k: d_k[1] * reduce_mean(self.kernel.matrix(d_k[0], d_j[0])),
-                              elems=[transpose(domains), transpose(self.alpha_coefficients)])), axis=-1),
-                                                                   elems=[transpose(domains),
-                                                                          transpose(self.alpha_coefficients)])), axis=-1))
+        pen_3 = reduce_mean(reduce_sum(vectorized_map(lambda d_j: d_j[1] * reduce_sum(transpose(
+            vectorized_map(lambda d_k: d_k[1] * reduce_mean(self.kernel.matrix(d_k[0], d_j[0])),
+                           elems=[stack(domains), alpha_coefficients])), axis=-1),
+                                                      elems=[stack(domains), alpha_coefficients]), axis=0))
 
         return sqrt(reduce_mean(pen_1) + float(-2.0) * reduce_mean(pen_2) + reduce_mean(pen_3))
 
@@ -194,7 +242,7 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
         self.domains = domains
 
     def set_batch_sample(self, batch_sample):
-        self.batch_sample = batch_sample
+        self.h = batch_sample
 
     def set_alpha_coefficients(self, alpha_coefficients):
         self.alpha_coefficients = alpha_coefficients
@@ -203,7 +251,7 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
         self.penalty = penalty
 
     def set_input(self, h):
-        self.batch_data = h
+        self.h = h
 
     def set_param(self, param):
         self.param = param

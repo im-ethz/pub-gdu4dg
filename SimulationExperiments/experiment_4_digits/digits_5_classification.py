@@ -109,7 +109,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
     domain_adaptation_spec_dict = {
         "num_domains": 5,
-        "domain_dim": 50,
+        "domain_dim": 18,
         "sigma": 7.5,
         'softness_param': 2,
         "similarity_measure": method,
@@ -220,7 +220,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                                                    bias=bias,
                                                    similarity_measure=similarity_measure,
                                                    domain_reg_method=reg_method,
-                                                   domain_reg_param=domain_reg_param))
+                                                   ))
 
     else:
         method = "SOURCE_ONLY"

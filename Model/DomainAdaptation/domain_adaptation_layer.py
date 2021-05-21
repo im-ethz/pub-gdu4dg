@@ -24,8 +24,6 @@ from tensorflow_probability.python.math.psd_kernels import ExponentiatedQuadrati
 from Model.DomainAdaptation.domain_adaptation_regularization import DomainRegularizer
 
 
-
-
 class DomainAdaptationLayer(Layer):
     """
 
@@ -107,9 +105,9 @@ class DomainAdaptationLayer(Layer):
 
                  # regularization params
                  domain_reg_method="None",
-                 lambda_OLS=1e-2,
-                 lambda_orth=0.2,
-                 lambda_sparse=0.05,
+                 lambda_OLS=1e-3,
+                 lambda_orth=1e-3,
+                 lambda_sparse=1e-3,
 
                  **kwargs):
         super(DomainAdaptationLayer, self).__init__(**kwargs)
@@ -155,6 +153,7 @@ class DomainAdaptationLayer(Layer):
                                                                                                 kernel=self.kernel,
                                                                                                 domain_number=domain_num,
                                                                                                 lambda_sparse=self.lambda_sparse,
+                                                                                                softness_param=self.softness_param,
                                                                                                 lambda_OLS=self.lambda_OLS,
                                                                                                 lambda_orth=self.lambda_orth,
                                                                                                 similarity_measure=self.similarity_measure,
@@ -292,15 +291,16 @@ class DomainAdaptationLayer(Layer):
     #@tf.function
     def get_mmd_penalty(self, h):
         domains = list(self.domain_basis.values())
-        self.alpha_coefficients = self.get_domain_prob(h, domains)
+        alpha_coefficients = transpose(self.get_domain_prob(h, domains))
 
         # (1)
         pen_1 = reduce_mean(diag_part(self.kernel.matrix(h, h)))
+
         # (2)
-        kme_squared_norm = self.get_kme_squared_norm(domains)
-        pen_2 = reduce_mean(transpose(vectorized_map(lambda d: scalar_mul((1/d[1]), reduce_mean(self.kernel.matrix(d[0], self.batch_data), axis=0)), elems=[transpose(stack(domains)), transpose(kme_squared_norm)])), axis=-1)
+        pen_2 = reduce_mean(vectorized_map(lambda d:  multiply(d[1], reduce_mean(self.kernel.matrix(d[0], h), axis=0)), elems=[stack(domains), alpha_coefficients]))
+
         # (3)
-        pen_3 = reduce_mean(reduce_sum(transpose(vectorized_map(lambda d_j: d_j[1] * reduce_sum(transpose(vectorized_map(lambda d_k: d_k[1] * reduce_mean(self.kernel.matrix(d_k[0], d_j[0])), elems=[transpose(domains), transpose(self.alpha_coefficients)])), axis=-1), elems=[transpose(domains), transpose(self.alpha_coefficients)])), axis=-1))
+        pen_3 = reduce_mean(reduce_sum(vectorized_map(lambda d_j: d_j[1] * reduce_sum(transpose(vectorized_map(lambda d_k: d_k[1] * reduce_mean(self.kernel.matrix(d_k[0], d_j[0])), elems=[stack(domains), alpha_coefficients])), axis=-1), elems=[stack(domains), alpha_coefficients]), axis=0))
 
         mmd_penalty = sqrt(pen_1 + (-2) * pen_2 + pen_3)
 
