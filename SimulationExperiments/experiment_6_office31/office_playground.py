@@ -235,15 +235,15 @@ def office_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         similarity_measure = domain_adaptation_spec_dict["similarity_measure"]
         domain_reg_param = domain_adaptation_spec_dict["domain_reg_param"]
 
-        prediction_layer.add(DomainAdaptationLayer(num_domains=num_domains,
-                                        domain_dimension=domain_dim,
-                                        softness_param=2,
-                                        units=31,
-                                        activation="tanh",
-                                        sigma=sigma,
-                                        similarity_measure=similarity_measure,
-                                        domain_reg_method=reg_method,
-                                        domain_reg_param=domain_reg_param))
+        prediction_layer.add(DomainAdaptationLayer(domain_units=num_domains,
+                                                   M=domain_dim,
+                                                   softness_param=2,
+                                                   units=31,
+                                                   activation="tanh",
+                                                   sigma=sigma,
+                                                   similarity_measure=similarity_measure,
+                                                   domain_reg_method=reg_method,
+                                                   domain_reg_param=domain_reg_param))
 
 
     else:
@@ -349,8 +349,8 @@ def office_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
             domain_reg_param = domain_adaptation_spec_dict["domain_reg_param"]
             softness_param = domain_adaptation_spec_dict["softness_param"]
 
-            prediction_layer.add(DomainAdaptationLayer(num_domains=num_domains,
-                                                       domain_dimension=domain_dim,
+            prediction_layer.add(DomainAdaptationLayer(domain_units=num_domains,
+                                                       M=domain_dim,
                                                        softness_param=softness_param,
                                                        units=31,
                                                        kernel=kernel,

@@ -79,7 +79,7 @@ def init_gpu(gpu, memory):
         except RuntimeError as e:
             print(e)
 
-init_gpu(gpu=1, memory=10000)
+init_gpu(gpu=3, memory=8000)
 
 # file path to the location where the results are stored
 res_file_dir = "/headwind/misc/domain-adaptation/digits/eugen"
@@ -109,7 +109,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
     domain_adaptation_spec_dict = {
         "num_domains": 5,
-        "domain_dim": 10,
+        "domain_dim": 50,
         "sigma": 7.5,
         'softness_param': 2,
         "similarity_measure": method,
@@ -210,17 +210,17 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
         #prediction_layer.add(BatchNormalization())
 
-        prediction_layer.add(DomainAdaptationLayer(num_domains=num_domains,
-                                        domain_dimension=domain_dim,
-                                        softness_param=softness_param,
-                                        units=10,
-                                        kernel=kernel,
-                                        sigma=sigma,
-                                        activation=activation,
-                                        bias=bias,
-                                        similarity_measure=similarity_measure,
-                                        domain_reg_method=reg_method,
-                                        domain_reg_param=domain_reg_param))
+        prediction_layer.add(DomainAdaptationLayer(domain_units=num_domains,
+                                                   M=domain_dim,
+                                                   softness_param=softness_param,
+                                                   units=10,
+                                                   kernel=kernel,
+                                                   sigma=sigma,
+                                                   activation=activation,
+                                                   bias=bias,
+                                                   similarity_measure=similarity_measure,
+                                                   domain_reg_method=reg_method,
+                                                   domain_reg_param=domain_reg_param))
 
     else:
         method = "SOURCE_ONLY"
@@ -377,8 +377,8 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
             #sigma = domain_adaptation_spec_dict['sigma']
             #prediction_layer.add(BatchNormalization())
-            prediction_layer.add(DomainAdaptationLayer(num_domains=num_domains,
-                                                       domain_dimension=domain_dim,
+            prediction_layer.add(DomainAdaptationLayer(domain_units=num_domains,
+                                                       M=domain_dim,
                                                        softness_param=softness_param,
                                                        units=10,
                                                        kernel=kernel,

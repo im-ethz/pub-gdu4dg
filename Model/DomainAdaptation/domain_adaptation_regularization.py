@@ -6,7 +6,7 @@ import tensorflow as tf
 
 from tensorflow.python.ops.math_ops import reduce_sum, reduce_prod, reduce_mean, scalar_mul, add, tanh, multiply, sqrt, mat_mul
 from tensorflow.python.ops.nn_ops import softmax
-from tensorflow.python.ops.array_ops import stack
+from tensorflow.python.ops.array_ops import stack, transpose
 from tensorflow.python.ops.linalg.linalg import diag_part
 
 
@@ -34,7 +34,7 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
            kernel which is used in the DomainAdaptationLayer
        num_domains : int, optional
            number of domains, included in the domains
-       orthogonalization_penalty : string, optional
+       orth_pen_method : string, optional
            method which is used as the penalty for the orthogonalization
        domain_number : int
             number of the domain, which will be regularized by this regularization
@@ -43,8 +43,6 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
 
        batch_sample : tf.Tensor, optional
            batch_sample is a placeholder and will is updated in each step in the training
-
-
        Returns
        -------
         double
@@ -56,32 +54,31 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
 
        """
 
-    def __init__(self, param=0.1, domain_number=None, kernel=None, domains=None,
-                 orthogonalization_penalty='SRIP', similarity_measure=None,
-                 C_domains=None,
-                 amplitude=1.0,
-                 param_orth=None,
-                 sparse_reg=True
+    def __init__(self,
+                 kernel=None,
+                 domains=None,
+                 domain_number=None,
+                 similarity_measure=None,
+                 orth_pen_method='SRIP',
+                 lambda_OLS=1e-2,
+                 lambda_sparse=0.05,
+                 lambda_orth=0.2
                  ):
 
-        self.param = param
-        self.param_orth = param_orth if param_orth is not None else param
+
         self.domains = domains
         self.kernel = kernel
-        self.aplitude = amplitude
         self.num_domains = None
         self.domain_dimension = None
-        self.sparse_reg = sparse_reg
         self.domain_number = domain_number
 
-        self.orthogonalization_penalty = orthogonalization_penalty
         self.similarity_measure = similarity_measure
-        self.C_domains = C_domains if self.similarity_measure.lower() != "projected" else None
+        # use orthogonal penalty only in case of projection
+        self.orth_pen_method = orth_pen_method if similarity_measure.lower() != "projection" else "NONE"
 
-        self.lambda_alpha = 0.2
-        self.lambda_sparse = 0.05
-        self.mmd_penalty = True
-        self.use_kme_gram = True
+        self.lambda_OLS = lambda_OLS
+        self.lambda_sparse = lambda_sparse
+        self.lambda_orth = lambda_orth
 
         # PLACEHOLDER (will be updated throughout the training)
         self.alpha = None
@@ -94,9 +91,6 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
     #h = tf.Tensor(None, dtype=np.float32)
     #x_domain = tf.random.normal(shape=(2000, 45))*1
 
-    #domain = 'domain_0'
-    #domain = 0
-
     def __call__(self, weight_matrix):
         if self.num_domains is None:
             self.num_domains = len(self.domains)
@@ -104,25 +98,25 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
         if self.domain_dimension is None:
             self.domain_dimension = self.domains[0].shape[0]
 
-        if self.orthogonalization_penalty.lower() in ['srip', "so", "mc"]:
+        if self.orth_pen_method.lower() in ['srip', "so", "mc"]:
                 domains = self.domains + [weight_matrix]
                 self.gram_matrix = gram_matrix = tf.map_fn(fn=lambda d_j: tf.map_fn(fn=lambda d_k: reduce_mean(self.kernel.matrix(d_j, d_k)), elems=stack(domains)), elems=stack(domains))
                 self.gram_diag = gram_diag = tf.linalg.diag(diag_part(gram_matrix))
 
 
-        if self.orthogonalization_penalty.lower() == 'srip':
+        if self.orth_pen_method.lower() == 'srip':
             domain_orthogonality_penalty = (tf.linalg.svd(gram_matrix - gram_diag, compute_uv=False)[0])
             self.orth_pen_name = "SRIP"
 
-        elif self.orthogonalization_penalty.lower() == "so":
+        elif self.orth_pen_method.lower() == "so":
             domain_orthogonality_penalty = tf.norm(gram_matrix - gram_diag, ord='fro', axis=(0, 1))
             self.orth_pen_name = "soft_orthogonality"
 
-        elif self.orthogonalization_penalty.lower() == "mc":
+        elif self.orth_pen_method.lower() == "mc":
             domain_orthogonality_penalty = tf.norm(gram_matrix - gram_diag, ord=np.inf, axis=(0, 1))
             self.orth_pen_name = "mutual_coherence"
 
-        elif self.orthogonalization_penalty.lower() == 'icp':
+        elif self.orth_pen_method.lower() == 'icp':
             domain_orthogonality_penalty = reduce_sum([reduce_mean(self.kernel.matrix(domain, weight_matrix)) for domain in self.domains])
             self.orth_pen_name = "cross_domain_IPS"
 
@@ -130,29 +124,25 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
             domain_orthogonality_penalty = float(0.0)
             self.orth_pen_name = "NONE"
 
-        self.orth_pen = float(1/(self.num_domains+1)) * (domain_orthogonality_penalty)
+        self.orthogonal_penalty = float(1 / (self.num_domains + 1)) * (domain_orthogonality_penalty)
 
-        ########################
-        # MMD REG
-        #######################
-        if self.mmd_penalty:
-            if self.sparse_reg:
-                self.mmd = 0.5 * self.get_mmd_penalty(weight_matrix) + (self.lambda_sparse / 2) * reduce_mean(self.kernel.matrix(weight_matrix, weight_matrix)) + self.lambda_alpha * tf.norm(self.alpha_coefficients, ord=1)
-
-            else:
-                self.mmd = 0.5 * self.get_mmd_penalty(weight_matrix)
-
+        if self.lambda_sparse > 0:
+            self.sparse_penalty = tf.norm(self.alpha_coefficients, ord=1)
         else:
-            self.mmd = float(0)
+            self.sparse_penalty = float(0)
 
-        return self.param * self.mmd + self.param_orth * self.orth_pen
+        self.OLS_penalty = self.get_OLS_penalty(weight_matrix)
+
+
+        # final output
+        self.domain_penalty =  self.lambda_OLS * self.OLS_penalty + self.lambda_sparse * self.sparse_penalty + self.lambda_orth * self.orthogonal_penalty
+
+        return self.domain_penalty
 
     def get_config(self):
-        return {self.orth_pen_name: self.orth_pen,
+        return {self.orth_pen_name: self.orthogonal_penalty,
                 'MMD': self.domain_mmd
                 }
-
-
 
 
     @tf.function
@@ -162,13 +152,8 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
 
         squared_kme = diag_part(self.get_kme_gram(domains=domains))
 
-        if False:
-            alpha = tf.squeeze(tf.map_fn(lambda d: reduce_mean(self.kernel.matrix(h, d), axis=-1, keepdims=True),
-                                         elems=stack(list(self.domain_basis.values()))), axis=-1)
-
         alpha = tf.squeeze(tf.vectorized_map(lambda d: reduce_mean(self.kernel.matrix(h, d[0])/d[1], axis=-1, keepdims=True),
                                      elems=[stack(domains), squared_kme]), axis=-1)
-
 
         return tf.transpose(alpha)
 
@@ -188,46 +173,25 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
 
         return squared_kme_norm
 
-
-
     #@tf.function
-    def get_mmd_penalty(self, weight_matrix):
+    def get_OLS_penalty(self, weight_matrix):
 
         domains = self.domains + [weight_matrix]
         # (1)
-        # pen_1_old = float(1 / self.num_domains + 1) * reduce_mean(diag_part(self.kernel.matrix(self.batch_data, self.batch_data)))
         pen_1 = diag_part(self.kernel.matrix(self.batch_data, self.batch_data))
         # (2)
-        # pen_2_old = reduce_mean(multiply(self.alpha_coefficients[:, self.domain_number], reduce_mean(self.kernel.matrix(self.batch_data, weight_matrix), axis=-1)))
-        pen_2 = reduce_mean(
-            tf.vectorized_map(lambda d:
-                              reduce_mean(self.kernel.matrix(d[0], self.batch_data), axis=0), # / d[1],
-                              elems=[domains, self.get_kme_squared_norm(domains)])
-            , axis=0)
-
-
+        pen_2 = reduce_mean(transpose(tf.vectorized_map(lambda d: scalar_mul((1/d[1]), reduce_mean(self.kernel.matrix(d[0], self.batch_data), axis=0)), elems=[transpose(stack(domains)), transpose(self.get_kme_squared_norm(domains))])), axis=-1)
         # (3)
-        #pen_3 = reduce_mean(
-        #[reduce_mean(self.kernel.matrix(weight_matrix, self.domains[k])) * reduce_sum(tf.matmul(tf.expand_dims(self.alpha_coefficients[:, self.domain_number], axis=-1), tf.expand_dims(self.alpha_coefficients[:, k], axis=-1), transpose_b=True)) for k in range(len(self.domains))] \
-        #+
-        #[reduce_mean(self.kernel.matrix(weight_matrix, weight_matrix)) * reduce_sum(tf.matmul(tf.expand_dims(self.alpha_coefficients[:, self.domain_number], axis=-1), tf.expand_dims(self.alpha_coefficients[:, self.domain_number], axis=-1), transpose_b=True))]
-        #)
-
-        #d_j_0 = domains[0]
-        #d_j_1 = self.alpha_coefficients[0]
-        #d_k_1 = self.alpha_coefficients[1]
-        #multiply(d_j_1, d_k_1)
-
-        pen_3 = reduce_sum(tf.vectorized_map(lambda d_j: reduce_sum(tf.vectorized_map(lambda d_k: multiply(d_j[1], d_k[1]) * reduce_mean(self.kernel.matrix(d_j[0], d_k[0])), elems=[domains, self.alpha_coefficients]), axis=0), elems=[domains, self.alpha_coefficients]), axis=-1)
-
+        pen_3 = reduce_mean(reduce_sum(transpose(tf.vectorized_map(lambda d_j: d_j[1] * reduce_sum(transpose(
+            tf.vectorized_map(lambda d_k: d_k[1] * reduce_mean(self.kernel.matrix(d_k[0], d_j[0])),
+                              elems=[transpose(domains), transpose(self.alpha_coefficients)])), axis=-1),
+                                                                   elems=[transpose(domains),
+                                                                          transpose(self.alpha_coefficients)])), axis=-1))
 
         return sqrt(reduce_mean(pen_1) + float(-2.0) * reduce_mean(pen_2) + reduce_mean(pen_3))
 
     def set_domains(self, domains):
         self.domains = domains
-
-    def set_C(self, C_domains):
-        self.C_domains = C_domains
 
     def set_batch_sample(self, batch_sample):
         self.batch_sample = batch_sample
