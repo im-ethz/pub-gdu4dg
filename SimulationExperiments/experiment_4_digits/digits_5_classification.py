@@ -19,13 +19,13 @@ import pandas as pd
 import tensorflow as tf
 
 tf.random.set_seed(1234)
+import matplotlib.pyplot as plt
 import tensorflow_probability as tfp
 
 from datetime import datetime
 from sklearn.utils import shuffle
 from sklearn.metrics.pairwise import euclidean_distances
 from tensorflow.python.keras.layers import *
-import matplotlib.pyplot as plt
 
 from tensorflow.python.keras.callbacks import EarlyStopping
 from tensorflow_probability.python.math.psd_kernels.positive_semidefinite_kernel import _SumKernel
@@ -38,6 +38,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Find code directory relative to our directory
 abspath = os.path.abspath(__file__)
 os.chdir(os.path.dirname(abspath))
+
 sys.path.append(os.path.abspath(os.path.join(__file__, '../../..')))
 THIS_FILE = os.path.abspath(__file__)
 
@@ -108,7 +109,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                           embedding=True):
 
     domain_adaptation_spec_dict = {
-        "num_domains": 5,
+        "num_domains": 16,
         "domain_dim": 18,
         "sigma": 7.5,
         'softness_param': 2,
@@ -119,7 +120,6 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         "source_sample_size": SOURCE_SAMPLE_SIZE,
         "target_sample_size": TARGET_SAMPLE_SIZE
     }
-
 
     #architecture used as feature extractor
     architecture = domain_adaptation_spec_dict["architecture"] ="DomainNet" # "DomainNet"# "LeNet"

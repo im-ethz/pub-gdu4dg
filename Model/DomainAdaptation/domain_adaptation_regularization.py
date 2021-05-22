@@ -231,10 +231,7 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
         pen_2 = reduce_mean(vectorized_map(lambda d:  multiply(d[1], reduce_mean(self.kernel.matrix(d[0], self.h), axis=0)), elems=[stack(domains), alpha_coefficients]))
 
         # (3)
-        pen_3 = reduce_mean(reduce_sum(vectorized_map(lambda d_j: d_j[1] * reduce_sum(transpose(
-            vectorized_map(lambda d_k: d_k[1] * reduce_mean(self.kernel.matrix(d_k[0], d_j[0])),
-                           elems=[stack(domains), alpha_coefficients])), axis=-1),
-                                                      elems=[stack(domains), alpha_coefficients]), axis=0))
+        pen_3 = reduce_mean(reduce_sum(vectorized_map(lambda d_j: d_j[1] * reduce_sum(transpose(vectorized_map(lambda d_k: d_k[1] * reduce_mean(self.kernel.matrix(d_k[0], d_j[0])), elems=[stack(domains), alpha_coefficients])), axis=-1), elems=[stack(domains), alpha_coefficients]), axis=0))
 
         return sqrt(reduce_mean(pen_1) + float(-2.0) * reduce_mean(pen_2) + reduce_mean(pen_3))
 

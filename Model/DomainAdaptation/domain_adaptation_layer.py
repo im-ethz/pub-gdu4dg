@@ -168,7 +168,7 @@ class DomainAdaptationLayer(Layer):
                                                                          shape=(self.domain_dimension, input_shape[-1],),
                                                                          trainable=True,
                                                                          regularizer=self.domain_basis_reg_dict["domain_reg_{}".format(domain)],
-                                                                         initializer=tf.keras.initializers.RandomNormal(mean=domain*5*(-1)**(domain), stddev=(domain+1)*0.05)) for domain in range(self.num_domains)}
+                                                                         initializer=tf.keras.initializers.RandomNormal(mean=domain*2*(-1)**(domain), stddev=(domain+1)*0.05)) for domain in range(self.num_domains)}
 
         #uodate the regularization parameters
         if self.domain_reg:
@@ -302,8 +302,8 @@ class DomainAdaptationLayer(Layer):
         # (3)
         pen_3 = reduce_mean(reduce_sum(vectorized_map(lambda d_j: d_j[1] * reduce_sum(transpose(vectorized_map(lambda d_k: d_k[1] * reduce_mean(self.kernel.matrix(d_k[0], d_j[0])), elems=[stack(domains), alpha_coefficients])), axis=-1), elems=[stack(domains), alpha_coefficients]), axis=0))
 
-        mmd_penalty = sqrt(pen_1 + (-2) * pen_2 + pen_3)
 
+        mmd_penalty = sqrt(pen_1 + (-2) * pen_2 + pen_3)
         return mmd_penalty
 
     @tf.function
@@ -312,6 +312,25 @@ class DomainAdaptationLayer(Layer):
         domain_distributional_variance = reduce_mean(diag_part(domain_gram_matrix)) - reduce_mean(domain_gram_matrix)
         return domain_distributional_variance
 
+
+    def get_orth_penalty(self):
+        self.gram_matrix = gram_matrix = self.get_kme_gram()
+
+        orth_pen_dict = {}
+
+        self.orth_pen_srip = orth_pen_srip = (tf.linalg.svd(gram_matrix - diag(diag_part(gram_matrix)), compute_uv=False)[0])
+        orth_pen_dict.update({"SRIP": orth_pen_srip.numpy()})
+
+        self.orth_pen_so = orth_pen_so = tf.norm(gram_matrix - diag(diag_part(gram_matrix)), ord='fro', axis=(0, 1))
+        orth_pen_dict.update({"SO": orth_pen_so.numpy()})
+
+        self.orth_pen_mc = orth_pen_mc = tf.norm(gram_matrix - diag(diag_part(gram_matrix)), ord=np.inf, axis=(0, 1))
+        orth_pen_dict.update({"MC": orth_pen_mc.numpy()})
+
+        self.orth_pen_icp = orth_pen_icp = reduce_sum(gram_matrix - diag(diag_part(gram_matrix)))
+        orth_pen_dict.update({"ICP": orth_pen_icp.numpy()})
+
+        return orth_pen_dict
 
 
     def compute_output_shape(self, input_shape):

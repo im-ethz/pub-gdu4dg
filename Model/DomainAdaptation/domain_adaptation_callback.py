@@ -51,32 +51,30 @@ class DomainCallback(tf.keras.callbacks.Callback):
             train_features = feature_extractor(random_sample_train)
             test_features = feature_extractor(random_sample_test)
 
-            try:
-                eval_dict['DOMAIN_PROB_TRAIN'] = np.mean(self.domain_layer.get_domain_probability(train_features).numpy(), axis=0).round(3)
-            except:
-                eval_dict['DOMAIN_PROB_TRAIN'] = np.mean(self.domain_layer.get_domain_probability(train_features), axis=-1).round(3)
+            # distribution  of the training data
+            domain_train_prob = self.domain_layer.get_domain_prob(train_features).numpy()
+            eval_dict['DOMAIN_PROB_TRAIN'] = np.mean(domain_train_prob, axis=0).round(3)
+            eval_dict['PROB_STD_TRAIN'] = np.std(domain_train_prob, axis=0).round(3)
 
+            domain_train_prob = self.domain_layer.get_domain_prob(test_features).numpy()
+            eval_dict['DOMAIN_PROB_TEST'] = np.mean(domain_train_prob, axis=0).round(3)
 
-            try:
-                eval_dict['DOMAIN_PROB_TEST'] = np.mean(self.domain_layer.get_domain_probability(test_features).numpy(), axis=0).round(3)
-            except:
-                eval_dict['DOMAIN_PROB_TEST'] = np.mean(self.domain_layer.get_domain_probability(test_features), axis=-1).round(3)
+            #eval_dict['DOMAIN_PROB_TEST'] = np.mean(np.zeros(shape=domain_train_prob.shape), axis=0).round(3)
 
-            eval_dict['PROB_STD_TRAIN'] = np.std(self.domain_layer.get_domain_probability(train_features), axis=-1).round(3)
-
-            eval_dict['PROB_STD_TEST'] = np.std(self.domain_layer.get_domain_probability(test_features), axis=-1).round(3)
+            eval_dict['PROB_STD_TEST'] = np.std(domain_train_prob, axis=0).round(3)
 
             eval_dict['DOMAIN_VARIANCE'] = np.round(self.domain_layer.get_domain_distributional_variance(), 4)
 
             eval_dict['MMD_TRAIN'] = np.round(self.domain_layer.get_mmd_penalty(train_features).numpy(), 4)
             eval_dict['MMD_TEST'] = np.round(self.domain_layer.get_mmd_penalty(test_features).numpy(), 4)
 
-            eval_dict.update(self.domain_layer.domain_orthogonality_penalty())
+            eval_dict.update(self.domain_layer.get_orth_penalty())
             logs.update(eval_dict)
 
             if self.print_res:
                 try:
-                    output = "EPOCH:" + str(epoch) + "\t || " + " \t || ".join([key + ": " + str(np.round(logs[key], 3)) + "0" * (3 - len(str(np.round(logs[key], 3)).split(".")[1])) for key in logs.keys()]) + " \t ||"
+                    output = "EPOCH:" + str(epoch) + "\t || " + "  || ".join([key + ": " + str(np.round(logs[key], 3)) + "0" * (3 - len(str(np.round(logs[key], 3)).split(".")[1])) for key in logs.keys()]) + "  ||"
+                    output = output.replace("]0", "]")
                     print(output)
                 except:
                     pass
