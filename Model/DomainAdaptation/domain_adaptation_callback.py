@@ -2,9 +2,10 @@ import numpy as np
 import tensorflow as tf
 from sklearn.utils import resample
 from tensorflow.python.keras.models import Sequential
-from Model.DomainAdaptation.domain_adaptation_layer import DomainAdaptationLayer
+from Model.DomainAdaptation.domain_adaptation_layer import DGLayer
 
 class DomainCallback(tf.keras.callbacks.Callback):
+    """ """
     def __init__(self, train_data, test_data, print_res=True, max_sample_size=1000):
         super(DomainCallback, self).__init__()
         self.train_data = train_data
@@ -14,22 +15,34 @@ class DomainCallback(tf.keras.callbacks.Callback):
         self.print_res = print_res
         self.max_sample_size = min(max_sample_size, len(train_data), len(test_data))
 
-
     def on_train_begin(self, logs=None):
         self.epoch = []
 
+
     def on_epoch_end(self, epoch, logs):
+        """ adds values of domain generalization layer to the history during training
+
+        Parameters
+        ----------
+        epoch : `int`
+            current epoch
+            
+        logs : `dict`
+            dictionary with logs during training
+
+
+        """
 
         try:
             feature_extractor = self.model.feature_extractor
             for l in range(len(self.model.prediction_layer.layers)):
-                if isinstance(self.model.prediction_layer.layers[l], DomainAdaptationLayer):
+                if isinstance(self.model.prediction_layer.layers[l], DGLayer):
                     self.domain_layer_index = l
                     self.domain_layer = self.model.prediction_layer.layers[l]
 
         except:
             for l in range(len(self.model.layers)):
-                if isinstance(self.model.layers[l], DomainAdaptationLayer):
+                if isinstance(self.model.layers[l], DGLayer):
                     self.domain_layer_index = l
                     self.domain_layer = self.model.layers[l]
 
@@ -56,17 +69,16 @@ class DomainCallback(tf.keras.callbacks.Callback):
             eval_dict['DOMAIN_PROB_TRAIN'] = np.mean(domain_train_prob, axis=0).round(3)
             eval_dict['PROB_STD_TRAIN'] = np.std(domain_train_prob, axis=0).round(3)
 
+
+            # distribution  of the test data
             domain_train_prob = self.domain_layer.get_domain_prob(test_features).numpy()
             eval_dict['DOMAIN_PROB_TEST'] = np.mean(domain_train_prob, axis=0).round(3)
-
-            #eval_dict['DOMAIN_PROB_TEST'] = np.mean(np.zeros(shape=domain_train_prob.shape), axis=0).round(3)
-
             eval_dict['PROB_STD_TEST'] = np.std(domain_train_prob, axis=0).round(3)
 
             eval_dict['DOMAIN_VARIANCE'] = np.round(self.domain_layer.get_domain_distributional_variance(), 4)
 
-            eval_dict['MMD_TRAIN'] = np.round(self.domain_layer.get_mmd_penalty(train_features).numpy(), 4)
-            eval_dict['MMD_TEST'] = np.round(self.domain_layer.get_mmd_penalty(test_features).numpy(), 4)
+            eval_dict['MMD_TRAIN'] = np.round(self.domain_layer.get_OLS_penalty(train_features).numpy(), 4)
+            eval_dict['MMD_TEST'] = np.round(self.domain_layer.get_OLS_penalty(test_features).numpy(), 4)
 
             eval_dict.update(self.domain_layer.get_orth_penalty())
             logs.update(eval_dict)
@@ -88,6 +100,7 @@ class DomainCallback(tf.keras.callbacks.Callback):
 
 
 class DomainRegularizationCallback(tf.keras.callbacks.Callback):
+    """ """
     def __init__(self, num_epochs, gamma=10):
         super(DomainRegularizationCallback, self).__init__()
         self.num_epochs = num_epochs
@@ -96,9 +109,23 @@ class DomainRegularizationCallback(tf.keras.callbacks.Callback):
         self.domain_layer = None
 
     def on_epoch_end(self, epoch, logs=None):
+        """
+
+        Parameters
+        ----------
+        epoch :
+            
+        logs :
+            (Default value = None)
+
+        Returns
+        -------
+
+        
+        """
         if self.domain_layer is None:
             for l in range(len(self.model.layers)):
-                if isinstance(self.model.layers[l], DomainAdaptationLayer):
+                if isinstance(self.model.layers[l], DGLayer):
                     self.domain_layer_index = l
                     self.domain_layer = self.model.layers[l]
 
@@ -109,12 +136,27 @@ class DomainRegularizationCallback(tf.keras.callbacks.Callback):
 
 
 class FreezeFeatureExtractor(tf.keras.callbacks.Callback):
+    """ """
     def __init__(self, num_epochs):
         super(FreezeFeatureExtractor, self).__init__()
         self.num_epochs = num_epochs
         self.epoch = 0
 
     def on_epoch_end(self, epoch, logs=None):
+        """
+
+        Parameters
+        ----------
+        epoch :
+            
+        logs :
+            (Default value = None)
+
+        Returns
+        -------
+
+        
+        """
         if self.epoch > self.num_epochs:
             self.model.feature_extractor.trainable = False
             self.epoch += 1

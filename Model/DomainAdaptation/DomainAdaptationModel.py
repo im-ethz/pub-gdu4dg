@@ -9,6 +9,7 @@ from tensorflow_probability import distributions as tfd
 
 
 class DomainAdaptationModel(Model):
+    """ """
 
     def __init__(self, feature_extractor, prediction_layer):
         super(DomainAdaptationModel, self).__init__()
@@ -19,10 +20,36 @@ class DomainAdaptationModel(Model):
 
 
     def build(self, input_shape):
+        """
+
+        Parameters
+        ----------
+        input_shape :
+
+
+        Returns
+        -------
+
+        """
         self.feature_extractor.build(input_shape)
         super(DomainAdaptationModel, self).build(input_shape)
 
     def call(self, inputs, training=None, mask=None):
+        """
+
+        Parameters
+        ----------
+        inputs :
+
+        training :
+             (Default value = None)
+        mask :
+             (Default value = None)
+
+        Returns
+        -------
+
+        """
         if self.prediction_layer:
             x = self.prediction_layer(self.feature_extractor(inputs))
 
@@ -33,4 +60,5 @@ class DomainAdaptationModel(Model):
 
 
     def freeze_feature_extractor(self):
+        """ """
         self.feature_extractor.trainable = False

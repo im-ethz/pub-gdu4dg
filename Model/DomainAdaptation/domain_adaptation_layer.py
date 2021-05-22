@@ -13,10 +13,6 @@ from tensorflow.python.keras import activations
 from tensorflow.python.ops.parallel_for.control_flow_ops import vectorized_map
 from tensorflow.python.keras.initializers import GlorotUniform
 
-from tensorflow.python.keras.constraints import max_norm, MinMaxNorm
-
-from tensorflow.python.keras import backend as K
-
 import tensorflow_probability as tfp
 from tensorflow_probability.python.math.psd_kernels import ExponentiatedQuadratic, RationalQuadratic, MaternFiveHalves
 
@@ -24,79 +20,79 @@ from tensorflow_probability.python.math.psd_kernels import ExponentiatedQuadrati
 from Model.DomainAdaptation.domain_adaptation_regularization import DomainRegularizer
 
 
-class DomainAdaptationLayer(Layer):
-    """
-
-          This layer performs a unsupervised domain adaptation. The layer contains domains in the form of weighs ('domain_basis).
+class DGLayer(Layer):
+    """This layer performs a unsupervised domain adaptation. The layer contains domains in the form of weighs ('domain_basis).
           Each time the layer is called the input os compared
 
-          Parameters
-          -----------
-          kernel : tfp.math.psd_kernels instance, optional
-              kernel function for the domains and the acossiated RKHS,
-              Gaussian kernel is used as a default
+    Parameters
+    ----------
 
-          sigma: double, optional
-              sigma of the Gaussian kernel function
+    domain_units : `int`
+        number of domain units (elementary domains)
 
-          similarity_measure : string, in [`projected`,`MMD`,  'cosine_similarity']
-              method how each domain is weighted in the computation of the output
-              projected (default): orthogonal projection of the input into the domains, asuming orthogonal domains
-              MMD: Softmax of the MMD of each domain with the
-              cosine_similarity: inner product similarity of the input and each domain
+    N : `int`
+        number of basis vector included for each domain basis
 
-          softness_param: double, optional
-              used only in case of when similarity_measure is MMD od cosine_similarity. Is used as scaling factor in the
-              softmax function. A higher value leads to a higher probability for higher values in the softmax function.
+    kernel : `tfp.math.psd_kernels`, optional
+        kernel function for the domains and the acossiated RKHS,
+        Gaussian kernel is used as a default
 
-          domain_units: int
-              numbe of domains included in the layer
+    sigma : `double`, optional
+        bandwidth parameter for the Gaussian kernel
 
-          domain_dim: int
-              number of the vectors included in each domain
+    similarity_measure : `string`, in [`projected`, `MMD`, 'cosine_similarity']
+        method how each domain is weighted in the computation of the output (Default value = "projection")
+            - projected: coefficients are determined by the projection method
+            - MMD: softmax of the MMD feature mapping of the input and domain basis
+            - cosine_similarity: feature mapping of the input and domain basis
 
-          domain_reg_method: string
-              method, which is used a regularization for the domains
+    softness_param : `double`,
+        softmax parameter for the mmd and cosine_similarity method (Default value = 1)
 
-          domain_reg_param: double
-              how strong the regularization is taken into account
+    units : `int`
+        output dimension of the layer; if None, than it is the same as the input dimension (Default value = None)
 
-          bias: boolean
-              if `True` the model will include bias
+    bias : `boolean`
+        if `True`, the model will include bias (Default value = True)
 
 
+    orth_pen_method : `string`
+        method, used as orthogonal penalty  (Default value = "SO")
 
-          Notes
-          ------
-          - will be done later
+    domain_reg_param : `double`
+        how strong the regularization is taken into account
 
-          Examples
-          --------
-            >>> # simple example how the layer can be included in a Sequential model
+
+
+    Notes
+    ------
+
+    Examples
+    --------
+    >>># simple example how the layer can be included in a Sequential model
             >>> model = Sequential(Input())
             >>> model.add(Dense(100))
-            >>> model.add(Dense(10))
-            >>> model.add(DomainAdaptationLayer(num_domains=42,
+            >>> model.add(DGLayer(num_domains=42,
             >>>                     domain_dimension=25,
             >>>                     softness_param=5,
+            >>>                     units=10,
+            >>>                     activation='sigmoid',
             >>>                     sigma=1.2,
             >>>                     similarity_measure='projected',
-            >>>                     domain_reg_method='SRIP',
-            >>>                     domain_reg_param=1e-4))
-
-          """
+            >>>                     domain_reg_method='SO'))
+    """
     def __init__(self,
 
                  # domain params
                  domain_units,
-                 M, # basis size
-                 kernel=None, # Gaussian kernel is set as default
+                 N,  # basis size
+                 kernel=None,  # Gaussian kernel is set as default
                  sigma=0.5,
-                 amplitude=None,
+
 
                  # domain inference parameter
                  similarity_measure='projected',  #`MMD` 'cosine_similarity'
-                 softness_param=1.0, # softness parameter, which is used in case of mmd- or cosine-similarity
+                 softness_param=1.0,  # softness parameter, which is used in case of mmd- or cosine-similarity
 
                  # network parameter
                  units=None,
@@ -104,23 +100,22 @@ class DomainAdaptationLayer(Layer):
                  bias=True,
 
                  # regularization params
-                 domain_reg_method="None",
+                 orth_pen_method="SO",
                  lambda_OLS=1e-3,
                  lambda_orth=1e-3,
                  lambda_sparse=1e-3,
 
                  **kwargs):
-        super(DomainAdaptationLayer, self).__init__(**kwargs)
+        super(DGLayer, self).__init__(**kwargs)
 
         self.num_domains = domain_units
-        self.domain_dimension = M
+        self.N = N
         self.activation = activations.get(activation)
 
         # kernel attributes (Gaussian kernel is set as default)
         self.sigma = sigma
-        self.amplitude = amplitude
         if kernel is None:
-            self.kernel = ExponentiatedQuadratic(name='gaussian_kernel', amplitude=self.amplitude, length_scale=self.sigma, feature_ndims=1)
+            self.kernel = ExponentiatedQuadratic(name='gaussian_kernel', length_scale=self.sigma, feature_ndims=1)
             #self.kernel = RationalQuadratic(name='rational_quadratic', scale_mixture_rate=None, amplitude=self.amplitude, length_scale=self.sigma, feature_ndims=1)
             #self.kernel = MaternFiveHalves(length_scale=sigma, feature_ndims=1, amplitude=amplitude, name="generalized_matern")
 
@@ -130,7 +125,7 @@ class DomainAdaptationLayer(Layer):
         self.similarity_measure = similarity_measure
         self.softness_param = softness_param
 
-        self.domain_reg_method = domain_reg_method
+        self.orth_pen_method = orth_pen_method
 
         self.bias = bias
 
@@ -144,6 +139,14 @@ class DomainAdaptationLayer(Layer):
         self.domain_reg = bool(max(self.lambda_OLS, self.lambda_orth, self.lambda_orth) > 0.0)
 
     def build(self, input_shape):
+        """ build-method of the layer
+
+        Parameters
+        ----------
+        input_shape : `tuple`
+            shape of the input
+
+        """
 
         if self.units is None:
             self.units = input_shape[-1]
@@ -157,7 +160,7 @@ class DomainAdaptationLayer(Layer):
                                                                                                 lambda_OLS=self.lambda_OLS,
                                                                                                 lambda_orth=self.lambda_orth,
                                                                                                 similarity_measure=self.similarity_measure,
-                                                                                                orth_pen_method=self.domain_reg_method) for domain_num in range(self.num_domains)}
+                                                                                                orth_pen_method=self.orth_pen_method) for domain_num in range(self.num_domains)}
 
         else:
             self.domain_basis_reg_dict = {"domain_reg_{}".format(domain_num): None for domain_num in range(self.num_domains)}
@@ -165,7 +168,7 @@ class DomainAdaptationLayer(Layer):
 
 
         self.domain_basis = {'domain_{}'.format(domain): self.add_weight(name="domain_basis_" + str(domain),
-                                                                         shape=(self.domain_dimension, input_shape[-1],),
+                                                                         shape=(self.N, input_shape[-1],),
                                                                          trainable=True,
                                                                          regularizer=self.domain_basis_reg_dict["domain_reg_{}".format(domain)],
                                                                          initializer=tf.keras.initializers.RandomNormal(mean=domain*2*(-1)**(domain), stddev=(domain+1)*0.05)) for domain in range(self.num_domains)}
@@ -178,14 +181,13 @@ class DomainAdaptationLayer(Layer):
 
 
         # domain weights anf bias
-
         self.W_domains = {'domain_{}'.format(domain): self.add_weight(name="weights_domain_"+str(domain), shape=(input_shape[-1], self.units,), trainable=True,
                                                                           initializer=GlorotUniform()) for domain in range(self.num_domains)}
 
         if self.bias:
             self.B_domains = {'domain_{}'.format(domain): self.add_weight(name="bias_domain_"+str(domain), shape=(self.units, ), trainable=True, initializer=tf.keras.initializers.Zeros()) for domain in range(self.num_domains)}
 
-        super(DomainAdaptationLayer, self).build(input_shape)
+        super(DGLayer, self).build(input_shape)
 
     # for debugging purpose
     # h = tf.random.normal(shape=(42, input_shape[-1]))
@@ -194,8 +196,22 @@ class DomainAdaptationLayer(Layer):
 
 
     def call(self, h):
+        """ call-method of the layer (forward-propagation)
+
+        Parameters
+        ----------
+        h : `tf.Tensor`
+            input of the layer
+            
+
+        Returns
+        -------
+        h_out : `tf.Tensor`
+            propagated input
+
+        """
         if self.similarity_measure == 'projected':
-            domain_probability = self.compute_alpha(h)
+            domain_probability = self.get_projection_coef(h)
 
         elif self.similarity_measure == 'cosine_similarity':
             domain_probability = self.cosine_similarity_softmax(h)
@@ -213,7 +229,7 @@ class DomainAdaptationLayer(Layer):
         h_matrix_matmul = vectorized_map(lambda W: mat_mul(h, W), elems=stack(list(self.W_domains.values())))
 
         if self.bias:
-            h_matrix_matmul =squeeze(vectorized_map(lambda t: nn.bias_add(expand_dims(t[0], axis=-1), t[1]), elems=[h_matrix_matmul, stack(list(self.B_domains.values()))]), axis=-1)
+            h_matrix_matmul = squeeze(vectorized_map(lambda t: nn.bias_add(expand_dims(t[0], axis=-1), t[1]), elems=[h_matrix_matmul, stack(list(self.B_domains.values()))]), axis=-1)
 
         if self.activation is not None:
             h_prob_weighted = vectorized_map(lambda t: multiply(transpose(self.activation(t[0])), t[1]), elems=[h_matrix_matmul, transpose(domain_probability)])
@@ -226,6 +242,19 @@ class DomainAdaptationLayer(Layer):
 
     @tf.function
     def get_kme_gram(self, domains=None):
+        """
+
+        Parameters
+        ----------
+        domains : `list` [`tf.Tensor`]
+             if domains are `None`, the method use the domain basis (Default value = None)
+
+        Returns
+        -------
+        kme_gram_matrix : `tf.Tensor`
+            KME-Gram matrix of the domains
+
+        """
         if domains is None:
             domains = list(self.domain_basis.values())
 
@@ -235,6 +264,20 @@ class DomainAdaptationLayer(Layer):
 
     @tf.function
     def get_kme_squared_norm(self, domains=None):
+        """
+
+        Parameters
+        ----------
+        domains : `list` [`tf.Tensor`]
+             if domains are `None`, the method use the domain basis (Default value = None)
+
+        Returns
+        -------
+        squared_kme_norm : `tf.Tensor`
+            returns the squared KME norms of each domain
+
+
+        """
         if domains is None:
             domains = list(self.domain_basis.values())
 
@@ -244,18 +287,49 @@ class DomainAdaptationLayer(Layer):
 
     @tf.function
     def get_domain_prob(self, h, domains=None):
-        if self.similarity_measure == 'projected':
-            domain_probability = self.compute_alpha(h, domains=domains)
-        elif self.similarity_measure == 'cosine_similarity':
-            domain_probability = self.cosine_similarity_softmax(h, domains=domains)
-        else:
-            domain_probability = self.mmd_softmax(h, domains=domains)
+        """
 
-        return domain_probability
+        Parameters
+        ----------
+        h : `tf.Tensor`
+            input of the layer
+            
+        domains : `list` [`tf.Tensor`]
+             if domains are `None`, the method use the domain basis (Default value = None)
+
+        Returns
+        -------
+        domain_coefficients : `tf.Tensor`
+            tensorf of coefficients for each sample of each domain
+
+        """
+        if self.similarity_measure == 'projected':
+            domain_coefficients = self.get_projection_coef(h, domains=domains)
+        elif self.similarity_measure == 'cosine_similarity':
+            domain_coefficients = self.cosine_similarity_softmax(h, domains=domains)
+        else:
+            domain_coefficients = self.mmd_softmax(h, domains=domains)
+
+        return domain_coefficients
 
 
     @tf.function
     def mmd_softmax(self, h, domains=None):
+        """
+
+        Parameters
+        ----------
+        h : `tf.Tensor`
+            input of the layer
+            
+        domains : `list` [`tf.Tensor`]
+             if domains are `None`, the method use the domain basis (Default value = None)
+
+        Returns
+        -------
+        domain_probability_mmd : `tf.Tensor`
+
+        """
         if domains is None:
             domains = list(self.domain_basis.values())
 
@@ -267,17 +341,47 @@ class DomainAdaptationLayer(Layer):
 
     @tf.function
     def cosine_similarity_softmax(self, h, domains=None):
+        """
+
+        Parameters
+        ----------
+        h : `tf.Tensor`
+            input of the layer
+
+        domains : `list` [`tf.Tensor`]
+             if domains are `None`, the method use the domain basis (Default value = None)
+
+        Returns
+        -------
+        domain_probability_cosine_sim : `tf.Tensor`
+
+        """
         if domains is None:
             domains = list(self.domain_basis.values())
 
-        cosine_sim = tf.map_fn(lambda d: self.softness_param * reduce_mean(self.kernel.matrix(h, d), axis=1) / (sqrt(tf.linalg.diag_part(self.kernel.matrix(h, h))) * float(1 / self.domain_dimension) * sqrt(reduce_sum(self.kernel.matrix(d, d)))), elems=stack(domains))
+        cosine_sim = tf.map_fn(lambda d: self.softness_param * reduce_mean(self.kernel.matrix(h, d), axis=1) / (sqrt(tf.linalg.diag_part(self.kernel.matrix(h, h))) * float(1 / self.N) * sqrt(reduce_sum(self.kernel.matrix(d, d)))), elems=stack(domains))
 
         domain_probability_cosine_sim = transpose(softmax(cosine_sim, axis=0))
 
         return domain_probability_cosine_sim
 
     @tf.function
-    def compute_alpha(self, h, domains=None):
+    def get_projection_coef(self, h, domains=None):
+        """
+
+        Parameters
+        ----------
+        h : `tf.Tensor`
+            input of the layer
+
+        domains : `list` [`tf.Tensor`]
+             if domains are `None`, the method use the domain basis (Default value = None)
+
+        Returns
+        -------
+        domain_probability_cosine_sim : `tf.Tensor`
+
+        """
         if domains is None:
             domains = list(self.domain_basis.values())
 
@@ -289,7 +393,23 @@ class DomainAdaptationLayer(Layer):
 
 
     #@tf.function
-    def get_mmd_penalty(self, h):
+    def get_OLS_penalty(self, h, domains=None):
+        """
+
+        Parameters
+        ----------
+        h : `tf.Tensor`
+            input of the layer
+
+        domains : `list` [`tf.Tensor`]
+             if domains are `None`, the method use the domain basis (Default value = None)
+
+        Returns
+        -------
+        ols_penalty : `tf.Tensor`
+            ols penalty, based on given domains and input h
+
+        """
         domains = list(self.domain_basis.values())
         alpha_coefficients = transpose(self.get_domain_prob(h, domains))
 
@@ -303,17 +423,32 @@ class DomainAdaptationLayer(Layer):
         pen_3 = reduce_mean(reduce_sum(vectorized_map(lambda d_j: d_j[1] * reduce_sum(transpose(vectorized_map(lambda d_k: d_k[1] * reduce_mean(self.kernel.matrix(d_k[0], d_j[0])), elems=[stack(domains), alpha_coefficients])), axis=-1), elems=[stack(domains), alpha_coefficients]), axis=0))
 
 
-        mmd_penalty = sqrt(pen_1 + (-2) * pen_2 + pen_3)
-        return mmd_penalty
+        ols_penalty = sqrt(pen_1 + (-2) * pen_2 + pen_3)
+        return ols_penalty
 
     @tf.function
     def get_domain_distributional_variance(self):
+        """Computes the distributional variance of the domains basis
+
+        Returns
+        -------
+        domain_distributional_variance : `tf.Tensor`
+            distributional variance of the domain basis
+
+        """
         domain_gram_matrix = self.get_kme_gram()
         domain_distributional_variance = reduce_mean(diag_part(domain_gram_matrix)) - reduce_mean(domain_gram_matrix)
         return domain_distributional_variance
 
 
     def get_orth_penalty(self):
+        """
+        Returns
+        -------
+        orth_pen_dict : `dict` {`string`: `float'}
+            returns dictionary which includes the values of the orthogonality penalty functions for the domain basis
+
+        """
         self.gram_matrix = gram_matrix = self.get_kme_gram()
 
         orth_pen_dict = {}

@@ -17,16 +17,16 @@ import numpy as np
 import pandas as pd
 
 import tensorflow as tf
-
 tf.random.set_seed(1234)
+
 import matplotlib.pyplot as plt
 import tensorflow_probability as tfp
 
 from datetime import datetime
 from sklearn.utils import shuffle
 from sklearn.metrics.pairwise import euclidean_distances
-from tensorflow.python.keras.layers import *
 
+from tensorflow.python.keras.layers import *
 from tensorflow.python.keras.callbacks import EarlyStopping
 from tensorflow_probability.python.math.psd_kernels.positive_semidefinite_kernel import _SumKernel
 
@@ -48,8 +48,8 @@ from Model.utils import decode_one_hot_vector
 from Visualization.evaluation_plots import plot_TSNE
 from SimulationExperiments.experiment_4_digits.d5_dataloader import load_digits
 
+from Model.DomainAdaptation.domain_adaptation_layer import DGLayer
 from Model.DomainAdaptation.DomainAdaptationModel import DomainAdaptationModel
-from Model.DomainAdaptation.domain_adaptation_layer import DomainAdaptationLayer
 
 #def init_gpu(used_gpus=[2]):
 #    MEMORY_LIMITS = {0: 9000, 1: 9000, 2: 8000, 3: 8000,}
@@ -210,17 +210,17 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
         #prediction_layer.add(BatchNormalization())
 
-        prediction_layer.add(DomainAdaptationLayer(domain_units=num_domains,
-                                                   M=domain_dim,
-                                                   softness_param=softness_param,
-                                                   units=10,
-                                                   kernel=kernel,
-                                                   sigma=sigma,
-                                                   activation=activation,
-                                                   bias=bias,
-                                                   similarity_measure=similarity_measure,
-                                                   domain_reg_method=reg_method,
-                                                   ))
+        prediction_layer.add(DGLayer(domain_units=num_domains,
+                                     N=domain_dim,
+                                     softness_param=softness_param,
+                                     units=10,
+                                     kernel=kernel,
+                                     sigma=sigma,
+                                     activation=activation,
+                                     bias=bias,
+                                     similarity_measure=similarity_measure,
+                                     orth_pen_method=reg_method,
+                                     ))
 
     else:
         method = "SOURCE_ONLY"
@@ -377,17 +377,17 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
             #sigma = domain_adaptation_spec_dict['sigma']
             #prediction_layer.add(BatchNormalization())
-            prediction_layer.add(DomainAdaptationLayer(domain_units=num_domains,
-                                                       M=domain_dim,
-                                                       softness_param=softness_param,
-                                                       units=10,
-                                                       kernel=kernel,
-                                                       activation=activation,
-                                                       sigma=sigma,
-                                                       bias=bias,
-                                                       similarity_measure=method,
-                                                       domain_reg_method=reg_method,
-                                                       domain_reg_param=domain_reg_param))
+            prediction_layer.add(DGLayer(domain_units=num_domains,
+                                         N=domain_dim,
+                                         softness_param=softness_param,
+                                         units=10,
+                                         kernel=kernel,
+                                         activation=activation,
+                                         sigma=sigma,
+                                         bias=bias,
+                                         similarity_measure=method,
+                                         orth_pen_method=reg_method,
+                                         domain_reg_param=domain_reg_param))
 
             model = DomainAdaptationModel(feature_extractor=feature_extractor, prediction_layer=prediction_layer)
 

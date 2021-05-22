@@ -26,7 +26,7 @@ THIS_FILE = os.path.abspath(__file__)
 nohup /local/home/euernst/anaconda3/envs/euernst_MT_gpu/bin/python3.8 -u /local/home/euernst/mt-eugen-ernst/SimulationExperiments/experiment_6_office31_modified/office_playground.py > /local/home/euernst/mt-eugen-ernst/SimulationExperiments/simulation_results/experiment_4/OFFICE_nohup.log 2>&1 &
 '''
 
-from Model.DomainAdaptation.domain_adaptation_layer import DomainAdaptationLayer
+from Model.DomainAdaptation.domain_adaptation_layer import DGLayer
 from Model.DomainAdaptation.DomainAdaptationModel import DomainAdaptationModel
 
 import numpy as np
@@ -235,15 +235,15 @@ def office_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         similarity_measure = domain_adaptation_spec_dict["similarity_measure"]
         domain_reg_param = domain_adaptation_spec_dict["domain_reg_param"]
 
-        prediction_layer.add(DomainAdaptationLayer(domain_units=num_domains,
-                                                   M=domain_dim,
-                                                   softness_param=2,
-                                                   units=31,
-                                                   activation="tanh",
-                                                   sigma=sigma,
-                                                   similarity_measure=similarity_measure,
-                                                   domain_reg_method=reg_method,
-                                                   domain_reg_param=domain_reg_param))
+        prediction_layer.add(DGLayer(domain_units=num_domains,
+                                     N=domain_dim,
+                                     softness_param=2,
+                                     units=31,
+                                     activation="tanh",
+                                     sigma=sigma,
+                                     similarity_measure=similarity_measure,
+                                     orth_pen_method=reg_method,
+                                     domain_reg_param=domain_reg_param))
 
 
     else:
@@ -349,17 +349,17 @@ def office_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
             domain_reg_param = domain_adaptation_spec_dict["domain_reg_param"]
             softness_param = domain_adaptation_spec_dict["softness_param"]
 
-            prediction_layer.add(DomainAdaptationLayer(domain_units=num_domains,
-                                                       M=domain_dim,
-                                                       softness_param=softness_param,
-                                                       units=31,
-                                                       kernel=kernel,
-                                                       activation=activation,
-                                                       sigma=sigma,
-                                                       bias=bias,
-                                                       similarity_measure=method,
-                                                       domain_reg_method=reg_method,
-                                                       domain_reg_param=domain_reg_param))
+            prediction_layer.add(DGLayer(domain_units=num_domains,
+                                         N=domain_dim,
+                                         softness_param=softness_param,
+                                         units=31,
+                                         kernel=kernel,
+                                         activation=activation,
+                                         sigma=sigma,
+                                         bias=bias,
+                                         similarity_measure=method,
+                                         orth_pen_method=reg_method,
+                                         domain_reg_param=domain_reg_param))
 
 
             model = DomainAdaptationModel(feature_extractor=feature_exctractor, prediction_layer=prediction_layer)
