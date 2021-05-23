@@ -134,7 +134,7 @@ class DGLayer(Layer):
 
         self.lambda_OLS = lambda_OLS
         self.lambda_sparse = lambda_sparse
-        self.lambda_orth = lambda_orth if self.similarity_measure.lower() == "projecton" else 0
+        self.lambda_orth = lambda_orth if self.similarity_measure.lower() == "projected" else 0
 
         self.domain_reg = bool(max(self.lambda_OLS, self.lambda_orth, self.lambda_orth) > 0.0)
 
