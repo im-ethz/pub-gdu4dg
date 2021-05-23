@@ -1,3 +1,4 @@
+import os
 import io
 import random
 
@@ -51,6 +52,15 @@ def convert_seq_to_func_model(model):
     funcmodel = models.Model([input_layer], [prev_layer])
 
     return funcmodel
+
+
+
+def create_dir_if_not_exists(dir_path):
+    if not os.path.exists(dir_path):
+        os.mkdir(dir_path)
+        print("\n \n CREATED DIRECTORY: {}".format(dir_path))
+
+
 
 
 if __name__ == "__main__":

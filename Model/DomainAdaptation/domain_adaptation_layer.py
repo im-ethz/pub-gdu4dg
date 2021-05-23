@@ -55,12 +55,17 @@ class DGLayer(Layer):
     bias : `boolean`
         if `True`, the model will include bias (Default value = True)
 
-
-    orth_pen_method : `string`
+    orth_reg_method : `string`
         method, used as orthogonal penalty  (Default value = "SO")
 
-    domain_reg_param : `double`
+    lambda_OLS : `double`
         how strong the regularization is taken into account
+
+    lambda_orth : `double`
+            how strong the regularization is taken into account
+
+    lambda_sparse : `double`
+            how strong the regularization is taken into account
 
 
 
@@ -100,7 +105,7 @@ class DGLayer(Layer):
                  bias=True,
 
                  # regularization params
-                 orth_pen_method="SO",
+                 orth_reg_method="SO",
                  lambda_OLS=1e-3,
                  lambda_orth=1e-3,
                  lambda_sparse=1e-3,
@@ -125,7 +130,7 @@ class DGLayer(Layer):
         self.similarity_measure = similarity_measure
         self.softness_param = softness_param
 
-        self.orth_pen_method = orth_pen_method
+        self.orth_pen_method = orth_reg_method
 
         self.bias = bias
 
@@ -134,7 +139,7 @@ class DGLayer(Layer):
 
         self.lambda_OLS = lambda_OLS
         self.lambda_sparse = lambda_sparse
-        self.lambda_orth = lambda_orth if self.similarity_measure.lower() == "projecton" else 0
+        self.lambda_orth = lambda_orth if self.similarity_measure.lower() == "projection" else 0
 
         self.domain_reg = bool(max(self.lambda_OLS, self.lambda_orth, self.lambda_orth) > 0.0)
 
@@ -167,7 +172,7 @@ class DGLayer(Layer):
 
 
 
-        self.domain_basis = {'domain_{}'.format(domain): self.add_weight(name="domain_basis_" + str(domain),
+        self.domain_basis = {'V_{}'.format(domain): self.add_weight(name="domain_basis_" + str(domain),
                                                                          shape=(self.N, input_shape[-1],),
                                                                          trainable=True,
                                                                          regularizer=self.domain_basis_reg_dict["domain_reg_{}".format(domain)],

@@ -4,8 +4,11 @@ from tensorflow_addons.layers import *
 from tensorflow.python.keras.layers import *
 from tensorflow.python.keras import Model, models
 
+
 from tensorflow_probability import layers as tfpl
 from tensorflow_probability import distributions as tfd
+
+from Model.DomainAdaptation.domain_adaptation_layer import DGLayer
 
 
 class DomainAdaptationModel(Model):
@@ -17,7 +20,7 @@ class DomainAdaptationModel(Model):
         self.prediction_layer = prediction_layer
         self.freeze_after_epochs = None
         self.epoch_count = 0
-
+        self.dg_layer = None
 
     def build(self, input_shape):
         """
@@ -62,3 +65,15 @@ class DomainAdaptationModel(Model):
     def freeze_feature_extractor(self):
         """ """
         self.feature_extractor.trainable = False
+
+
+    def get_dg_layer(self):
+        if self.dg_layer is None:
+            for l in range(len(self.prediction_layer.layers)):
+                if isinstance(self.prediction_layer.layers[l], DGLayer):
+                    self.dg_layer_index = l
+                    self.dg_layer = self.prediction_layer.layers[l]
+
+        return self.dg_layer
+
+

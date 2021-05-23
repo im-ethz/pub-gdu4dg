@@ -6,5 +6,4 @@ tigramite
 *.DS_Store
 .DS_Store
 /.idea/
-
 /SimulationExperiments/toy_example/

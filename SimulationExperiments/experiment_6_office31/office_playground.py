@@ -242,7 +242,7 @@ def office_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                                      activation="tanh",
                                      sigma=sigma,
                                      similarity_measure=similarity_measure,
-                                     orth_pen_method=reg_method,
+                                     orth_reg_method=reg_method,
                                      domain_reg_param=domain_reg_param))
 
 
@@ -358,7 +358,7 @@ def office_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                                          sigma=sigma,
                                          bias=bias,
                                          similarity_measure=method,
-                                         orth_pen_method=reg_method,
+                                         orth_reg_method=reg_method,
                                          domain_reg_param=domain_reg_param))
 
 
