@@ -64,9 +64,9 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
                  domains=None,
                  similarity_measure=None,
                  orth_pen_method='SRIP',
-                 lambda_OLS=1e-2,
-                 lambda_sparse=0.05,
-                 lambda_orth=0.2,
+                 lambda_OLS=1e-3,
+                 lambda_sparse=1e-3,
+                 lambda_orth=1e-3,
                  softness_param=1
                  ):
 

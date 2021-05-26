@@ -21,6 +21,8 @@ import array_to_latex as a2l
 
 plot_file_dir = "/local/home/euernst/pub-gdu4dg/SimulationExperiments/toy_example/experiment_plots"
 results_file_dir = "/local/home/euernst/pub-gdu4dg/SimulationExperiments/toy_example/results_toy_example/"
+kernel_plots_dir = "/local/home/euernst/pub-gdu4dg/SimulationExperiments/toy_example/experiment_plots/kernel_plots"
+
 
 def plot_3d_kernel_function():
     fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
@@ -57,7 +59,7 @@ def plot_2d_kernel_function():
     laplacian_kernel = lambda r, sigma: np.exp(-sigma * np.abs(r))
 
     kernel_function_dict ={
-    "Gaussian kernel" : gaussian_kernel,
+    "Gaussian Kernel" : gaussian_kernel,
     "Laplacian Kernel" : laplacian_kernel
     }
 
@@ -68,10 +70,13 @@ def plot_2d_kernel_function():
             a = kernel(r, sigma)
             plt.plot(a, label="$\sigma={}$".format(sigma))
         plt.legend()
-        plt.grid()
+        #plt.grid()
         plt.xlabel("$r = x - x'$")
-        plt.title(key)
-        #plt.ylabel('$t-SNE_{2}$')
+        #plt.title(key)
+
+        kernel_plots_path = os.path.join(kernel_plots_dir, "{kernel_type}.eps".format(kernel_type=key.replace(" ", "_")))
+        plt.savefig(kernel_plots_path, format='eps', dpi=1000, bbox_inches='tight', pad_inches=0)
+
         plt.show()
         plt.close()
 
@@ -85,7 +90,7 @@ def plot_2d_kernel_function():
         plt.grid()
         plt.xlabel("$r = x - x'$")
         plt.title("Rational Quadratic Kernel")
-        #plt.ylabel('$t-SNE_{2}$')
+
         plt.show()
         plt.close()
 
@@ -108,12 +113,12 @@ def plot_results_toy_example(metrics=['binary_accuracy', 'binary_crossentropy',"
                 plt.plot(metric_values, label=method, linewidth=1.5, alpha=0.8)
 
         plt.legend()
-        plt.title(metric.replace("_", " ").replace("val", "test").upper())
+        #plt.title(metric.replace("_", " ").replace("val", "test").upper())
 
         model_res_dir = os.path.join(plot_file_dir, "model_res")
         create_dir_if_not_exists(model_res_dir)
-        save_file_path = os.path.join(model_res_dir, "training_{metric}_{method}.jpg".format(method=method, metric=metric))
-        plt.savefig(save_file_path, dpi=500)
+        save_file_path = os.path.join(model_res_dir, "training_{metric}_{method}.eps".format(method=method, metric=metric))
+        plt.savefig(save_file_path, format='eps', dpi=1000, bbox_inches='tight', pad_inches=0)
 
         plt.show()
         plt.close()
@@ -227,7 +232,7 @@ def create_coefficient_tabel():
 
 
 
-def create_mmd_heat_plot():
+def create_mmd_heat_plot(save_format="eps"):
     mmd_mat_file_names = glob.glob(results_file_dir+"**mmd_matrix**")
 
     for file in mmd_mat_file_names:
@@ -259,12 +264,12 @@ def create_mmd_heat_plot():
         heat_map.set_yticklabels(heat_map.get_yticklabels(), rotation=0, fontsize=15)
         heat_map.set_xticklabels(heat_map.get_yticklabels(),  fontsize=15)
 
-        plt.title("MMD Matrix: {}".format(method.replace("_", " ")))
+        #plt.title("MMD Matrix: {}".format(method.replace("_", " ")))
 
         mmd_heatmap_dir = os.path.join(plot_file_dir, "MMD_heatmaps")
         create_dir_if_not_exists(mmd_heatmap_dir)
-        save_file_path = os.path.join(mmd_heatmap_dir, "MMD_heatmap_{}.jpg".format(method) )
-        plt.savefig(save_file_path, dpi=500)
+        save_file_path = os.path.join(mmd_heatmap_dir, "MMD_heatmap_{method}.{save_format}".format(method=method, save_format=save_format))
+        plt.savefig(save_file_path, bbox_inches='tight', pad_inches=0, format='eps', dpi=1000)
 
         plt.show()
         plt.close()
@@ -285,6 +290,6 @@ def create_dir_if_not_exists(dir_path):
 
 if __name__ == "__main__":
     create_mmd_heat_plot()
-    plot_results_toy_example()
     #plot_2d_kernel_function()
+    #plot_results_toy_example()
 
