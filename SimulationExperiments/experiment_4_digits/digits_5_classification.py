@@ -42,32 +42,13 @@ os.chdir(os.path.dirname(abspath))
 sys.path.append(os.path.abspath(os.path.join(__file__, '../../..')))
 THIS_FILE = os.path.abspath(__file__)
 
-
-
 from Model.utils import decode_one_hot_vector
 from Visualization.evaluation_plots import plot_TSNE
 from SimulationExperiments.experiment_4_digits.d5_dataloader import load_digits
 
 from Model.DomainAdaptation.domain_adaptation_layer import DGLayer
 from Model.DomainAdaptation.DomainAdaptationModel import DomainAdaptationModel
-
-#def init_gpu(used_gpus=[2]):
-#    MEMORY_LIMITS = {0: 9000, 1: 9000, 2: 8000, 3: 8000,}
-#    gpus = tf.config.list_physical_devices('GPU')
-#    if len(gpus) > 0:
-#        try:
-#            relevant_gpus = [gpus[i] for i in used_gpus]
-#            print(f'set visible GPU device as {relevant_gpus}')
-#            tf.config.set_visible_devices(relevant_gpus, 'GPU')
-#            for used_gpu in used_gpus:
-#                if relevant_gpus[used_gpu] in tf.config.get_visible_devices('GPU'):
-#                    tf.config.experimental.set_memory_growth(gpus[used_gpu], True)
-#                    tf.config.experimental.set_virtual_device_configuration(gpus[used_gpu], [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=MEMORY_LIMITS[used_gpu])])
-#        except RuntimeError:
-#            import traceback
-#            traceback.print_exc()
-#            pass
-
+from Model.DomainAdaptation.domain_adaptation_callback import DomainCallback
 
 def init_gpu(gpu, memory):
     used_gpu = gpu
@@ -76,15 +57,14 @@ def init_gpu(gpu, memory):
         try:
             tf.config.experimental.set_visible_devices(gpus[used_gpu], 'GPU')
             tf.config.experimental.set_virtual_device_configuration(gpus[used_gpu], [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=memory)])
-            #tf.config.experimental.set_memory_growth(gpus[used_gpu], True)
         except RuntimeError as e:
             print(e)
 
-init_gpu(gpu=3, memory=8000)
+init_gpu(gpu=0, memory=6000)
 
 # file path to the location where the results are stored
-res_file_dir = "/headwind/misc/domain-adaptation/digits/eugen"
 
+res_file_dir = "/local/home/sfoell/NeurIPS/results/test"
 SOURCE_SAMPLE_SIZE = 25000
 TARGET_SAMPLE_SIZE = 9000
 img_shape = (32, 32, 3)
@@ -105,16 +85,15 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                           fine_tune=True,
                           kernel=None,
                           data: DigitsData=None,
-                          run=None,
-                          embedding=True):
+                          run=None):
 
     domain_adaptation_spec_dict = {
-        "num_domains": 16,
-        "domain_dim": 18,
+        "num_domains": 5,
+        "domain_dim": 10,
         "sigma": 7.5,
         'softness_param': 2,
-        "similarity_measure": method,
-        "domain_reg_param": 1e-3,
+        "similarity_measure": method,# MMD, IPS
+        "lambda_orth": 1e-8,
         "img_shape": img_shape,
         "bias": bias,
         "source_sample_size": SOURCE_SAMPLE_SIZE,
@@ -128,7 +107,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
     # used in case of "projected"
     domain_adaptation_spec_dict["orth_reg"] = reg = "SRIP"
-    domain_adaptation_spec_dict['reg_method'] = reg_method = reg if method == 'projected' else 'none'
+    domain_adaptation_spec_dict['reg_method'] = orth_reg_method = reg if method == 'projected' else 'none'
 
     # training specification
     use_optim = domain_adaptation_spec_dict['use_optim'] = 'adam' #"SGD"
@@ -205,11 +184,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         sigma = domain_adaptation_spec_dict['sigma']
         domain_dim = domain_adaptation_spec_dict['domain_dim']
         similarity_measure = domain_adaptation_spec_dict["similarity_measure"]
-        domain_reg_param = domain_adaptation_spec_dict["domain_reg_param"]
         softness_param = domain_adaptation_spec_dict["softness_param"]
-
-        #prediction_layer.add(BatchNormalization())
-
         prediction_layer.add(DGLayer(domain_units=num_domains,
                                      N=domain_dim,
                                      softness_param=softness_param,
@@ -219,17 +194,16 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                                      activation=activation,
                                      bias=bias,
                                      similarity_measure=similarity_measure,
-                                     orth_reg_method=reg_method,
+                                     orth_reg_method=orth_reg_method,
                                      ))
 
     else:
         method = "SOURCE_ONLY"
-        prediction_layer.add(Dense(10))#, activation=activation, use_bias=bias))
-
-    #
+        prediction_layer.add(Dense(10))
 
     callback = [EarlyStopping(patience=patience, restore_best_weights=True)]
-
+    domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True,
+                                     max_sample_size=5000)
     ##########################################
     ###     INITIALIZE MODEL
     ##########################################
@@ -252,11 +226,11 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                   )
 
     run_start = datetime.now()
-    #domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True, max_sample_size=5000)
+
     hist = model.fit(x=x_source_tr, y=y_source_tr, epochs=num_epochs, verbose=2,
                      batch_size=batch_size, shuffle=False,
                      validation_data=(x_val, y_val),
-                     callbacks=callback,
+                     callbacks=[callback,domain_callback] if domain_adaptation else callback,
                      )
     run_end = datetime.now()
 
@@ -286,8 +260,6 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         save_dir_path = os.path.join(save_dir_path, save_dir_name)
         create_dir_if_not_exists(save_dir_path)
 
-    embedding = False
-
     if save_plot or save_feature:
         X_DATA = model.predict(x_target_te)
         Y_DATA = decode_one_hot_vector(y_target_te)
@@ -305,6 +277,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
 
     if save_file:
+
         hist_df = pd.DataFrame(hist.history)
         duration = run_end - run_start
 
@@ -312,7 +285,6 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         hist_file_path = os.path.join(save_dir_path, file_name_hist)
         hist_df.to_csv(hist_file_path)
 
-        # perpare results
         model_res = model.evaluate(x_target_te, y_target_te, verbose=2)
         metric_names = model.metrics_names
         eval_df = pd.DataFrame(model_res).transpose()
@@ -343,25 +315,22 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     #               FINE TUNE                #
     ##########################################
 
-    # used only if no DA layer is used in previous stage
-    #fine_tune = False
-
     if domain_adaptation is False and fine_tune:
 
         feature_extractor_filepath = os.path.join(save_dir_path, 'feature_extractor.h5.tmp')
         feature_extractor.save(feature_extractor_filepath)
 
-        for method in ['projected']:
-
+        for similarity_measure in ['cosine_similarity']:
 
             prediction_layer = tf.keras.Sequential([], name='prediction_layer')
-            if domain_adaptation is False and fine_tune and embedding:
-                num_domains = domain_adaptation_spec_dict['num_domains'] = 10
+
+            num_domains = domain_adaptation_spec_dict['num_domains']
 
             feature_extractor = keras.models.load_model(feature_extractor_filepath)
             feature_extractor.trainable = False
 
             # sigma is estimated based on the median heuristic, with sample size of 5000 features
+            # sigma = domain_adaptation_spec_dict['sigma']
             sigma = domain_adaptation_spec_dict['sigma'] = sigma_median(feature_extractor.predict(x_source_tr))
             print("\n\n\n ESTIMATED SIGMA: {sigma} ".format(sigma=str(np.round(sigma, 3))))
 
@@ -369,25 +338,21 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
             ###     PREDICTION LAYER
             #######################################
             domain_dim = domain_adaptation_spec_dict['domain_dim']
-            domain_adaptation_spec_dict["similarity_measure"] = method
-
-            domain_reg_param = domain_adaptation_spec_dict["domain_reg_param"]
+            domain_adaptation_spec_dict["similarity_measure"] = similarity_measure
             softness_param = domain_adaptation_spec_dict["softness_param"]
-            domain_adaptation_spec_dict['reg_method'] = reg_method = reg if method == 'projected' else 'none'
+            domain_adaptation_spec_dict['reg_method'] = orth_reg_method = reg if method == 'projected' else 'none'
 
-            #sigma = domain_adaptation_spec_dict['sigma']
-            #prediction_layer.add(BatchNormalization())
             prediction_layer.add(DGLayer(domain_units=num_domains,
                                          N=domain_dim,
                                          softness_param=softness_param,
                                          units=10,
                                          kernel=kernel,
-                                         activation=activation,
                                          sigma=sigma,
+                                         activation=activation,
                                          bias=bias,
-                                         similarity_measure=method,
-                                         orth_reg_method=reg_method,
-                                         domain_reg_param=domain_reg_param))
+                                         similarity_measure=similarity_measure,
+                                         orth_reg_method=orth_reg_method,
+                                         ))
 
             model = DomainAdaptationModel(feature_extractor=feature_extractor, prediction_layer=prediction_layer)
 
@@ -397,14 +362,14 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
             model.compile(optimizer=optimizer, loss=tf.keras.losses.CategoricalCrossentropy(from_logits=from_logits), metrics=metrics)
 
-
-            #domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True, max_sample_size=5000)
+            callback = [EarlyStopping(patience=patience, restore_best_weights=True)]
+            domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True, max_sample_size=5000)
 
 
             print('\n BEGIN FINE TUNING:\t' + method.upper() + "\t" + TARGET_DOMAIN[0] + "\n")
             hist = model.fit(x=x_source_tr, y=y_source_tr.astype(np.float32), epochs=num_epochs_FT, verbose=2,
                                    batch_size=batch_size, shuffle=False, validation_data=(x_val, y_val),
-                                   callbacks=[callback]
+                                   callbacks=[callback, domain_callback]
                                    )
             model.evaluate(x_target_te, y_target_te, verbose=2)
 
@@ -483,9 +448,18 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     return None
 
 
-#def MMD(x1, x2, kernel):
-#    return np.mean(kernel.matrix(x1, x1)) - 2 * np.mean(kernel.matrix(x1, x2)) + np.mean(kernel.matrix(x2, x2))
+def MMD(x1, x2, kernel):
+    return np.mean(kernel.matrix(x1, x1)) - 2 * np.mean(kernel.matrix(x1, x2)) + np.mean(kernel.matrix(x2, x2))
 
+def get_mmd_matrix(x_data, kernel):
+    num_ds = len(x_data) if type(x_data) == list else 1
+    mmd_matrix = np.zeros((num_ds, num_ds))
+    for i in range (num_ds):
+        x_i = x_data[i]
+        for j in range (i, num_ds):
+            x_j = x_data[j]
+            mmd_matrix[i, j] = mmd_matrix[j, i] = MMD(x_i, x_j, kernel = kernel)
+    return mmd_matrix
 
 def sigma_median(x_data, sample_size=5000):
     x_data = x_data[:sample_size]
@@ -579,13 +553,10 @@ if __name__ == "__main__":
 
     # load data once
     digits_data = DigitsData()
-    #digits_data.to_pickle("/headwind/misc/domain-adaptation/digits/simon/run-all/Data/all.pkl")
-    #digits_data = pd.read_pickle("/headwind/misc/domain-adaptation/digits/simon/run-all/Data/all.pkl")
     #for i in range(5):
     for i in [0]:
         experiments = []
-        for method in ['mmd']:
-        #for method in ['projected']:
+        for method in ['cosine_similarity' , 'MMD','projected']:
             for kernel in [None]:
                 for TEST_SOURCES in [['mnistm'], ['mnist'], ['syn'], ['svhn'], ['usps']]:
                     for batch_norm in [True]:  # , False]:

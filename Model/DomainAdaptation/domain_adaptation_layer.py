@@ -141,7 +141,7 @@ class DGLayer(Layer):
         self.lambda_sparse = lambda_sparse
         self.lambda_orth = lambda_orth if self.similarity_measure.lower() == "projected" else 0
 
-        self.domain_reg = bool(max(self.lambda_OLS, self.lambda_orth, self.lambda_orth) > 0.0)
+        self.domain_reg = bool(max(self.lambda_OLS, self.lambda_orth, self.lambda_sparse) > 0.0)
 
     def build(self, input_shape):
         """ build-method of the layer
