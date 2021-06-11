@@ -1,15 +1,5 @@
-import math
-
-from tensorflow_addons.layers import *
-from tensorflow.python.keras.layers import *
-from tensorflow.python.keras import Model, models
-
-
-from tensorflow_probability import layers as tfpl
-from tensorflow_probability import distributions as tfd
-
+from tensorflow.python.keras import Model
 from Model.DomainAdaptation.domain_adaptation_layer import DGLayer
-
 
 class DomainAdaptationModel(Model):
     """ """

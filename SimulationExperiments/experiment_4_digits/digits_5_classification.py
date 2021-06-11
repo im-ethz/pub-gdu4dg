@@ -8,7 +8,6 @@ silence_tensorflow()
 import os
 import sys
 import keras
-import skimage
 import logging
 import multiprocessing
 
@@ -19,7 +18,6 @@ import pandas as pd
 import tensorflow as tf
 tf.random.set_seed(1234)
 
-import matplotlib.pyplot as plt
 import tensorflow_probability as tfp
 
 from datetime import datetime
@@ -42,8 +40,6 @@ os.chdir(os.path.dirname(abspath))
 sys.path.append(os.path.abspath(os.path.join(__file__, '../../..')))
 THIS_FILE = os.path.abspath(__file__)
 
-
-
 from Model.utils import decode_one_hot_vector
 from Visualization.evaluation_plots import plot_TSNE
 from SimulationExperiments.experiment_4_digits.d5_dataloader import load_digits
@@ -51,32 +47,14 @@ from SimulationExperiments.experiment_4_digits.d5_dataloader import load_digits
 from Model.DomainAdaptation.domain_adaptation_layer import DGLayer
 from Model.DomainAdaptation.DomainAdaptationModel import DomainAdaptationModel
 
-#def init_gpu(used_gpus=[2]):
-#    MEMORY_LIMITS = {0: 9000, 1: 9000, 2: 8000, 3: 8000,}
-#    gpus = tf.config.list_physical_devices('GPU')
-#    if len(gpus) > 0:
-#        try:
-#            relevant_gpus = [gpus[i] for i in used_gpus]
-#            print(f'set visible GPU device as {relevant_gpus}')
-#            tf.config.set_visible_devices(relevant_gpus, 'GPU')
-#            for used_gpu in used_gpus:
-#                if relevant_gpus[used_gpu] in tf.config.get_visible_devices('GPU'):
-#                    tf.config.experimental.set_memory_growth(gpus[used_gpu], True)
-#                    tf.config.experimental.set_virtual_device_configuration(gpus[used_gpu], [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=MEMORY_LIMITS[used_gpu])])
-#        except RuntimeError:
-#            import traceback
-#            traceback.print_exc()
-#            pass
-
-
 def init_gpu(gpu, memory):
     used_gpu = gpu
     gpus = tf.config.experimental.list_physical_devices('GPU')
     if gpus:
         try:
             tf.config.experimental.set_visible_devices(gpus[used_gpu], 'GPU')
-            tf.config.experimental.set_virtual_device_configuration(gpus[used_gpu], [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=memory)])
-            #tf.config.experimental.set_memory_growth(gpus[used_gpu], True)
+            tf.config.experimental.set_virtual_device_configuration(gpus[used_gpu],
+            [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=memory)])
         except RuntimeError as e:
             print(e)
 
@@ -109,8 +87,8 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                           embedding=True):
 
     domain_adaptation_spec_dict = {
-        "num_domains": 16,
-        "domain_dim": 18,
+        "num_domains": 5,
+        "domain_dim": 50,
         "sigma": 7.5,
         'softness_param': 2,
         "similarity_measure": method,
@@ -122,7 +100,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     }
 
     #architecture used as feature extractor
-    architecture = domain_adaptation_spec_dict["architecture"] ="DomainNet" # "DomainNet"# "LeNet"
+    architecture = domain_adaptation_spec_dict["architecture"] ="LeNet" # "DomainNet"# "LeNet"
 
     domain_adaptation_spec_dict["kernel"] = "custom" if kernel is not None else "single"
 
@@ -138,7 +116,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     domain_adaptation_spec_dict['epochs'] = num_epochs = 250
     domain_adaptation_spec_dict['epochs_FT'] = num_epochs_FT = 250
     domain_adaptation_spec_dict['lr'] = lr
-    domain_adaptation_spec_dict['dropout'] = dropout = 0.5
+    domain_adaptation_spec_dict['dropout'] = dropout = 0.0
     domain_adaptation_spec_dict['patience'] = patience = 10
 
     # network spacification
@@ -156,19 +134,26 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     #print(single_source_domain)
     # dataset used in K3DA
 
-    if (single_best == True) & (SOURCE_DOMAINS[0] == TARGET_DOMAIN[0].lower()):
+    if (single_best==True) & (SOURCE_DOMAINS[0] == TARGET_DOMAIN[0].lower()):
         print('Source and target domain are the same! Skip!')
         return None
     else:
-        x_source_tr = np.concatenate([data.x_train_dict[source.lower()] for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
-        y_source_tr = np.concatenate([data.y_train_dict[source.lower()] for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
+        x_source_tr = np.concatenate([data.x_train_dict[source.lower()]
+                                  for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
+
+        y_source_tr = np.concatenate([data.y_train_dict[source.lower()]
+                                  for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
 
         #tf.data.Dataset.from_tensor_slices((x_source_tr, y_source_tr)).cache().prefetch(buffer_size=tf.data.AUTOTUNE)
 
         x_source_tr, y_source_tr = shuffle(x_source_tr, y_source_tr, random_state=1234)
 
-        x_source_te = np.concatenate([data.x_test_dict[source.lower()] for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
-        y_source_te = np.concatenate([data.y_test_dict[source.lower()] for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
+        x_source_te = np.concatenate([data.x_test_dict[source.lower()]
+                                  for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
+
+        y_source_te = np.concatenate([data.y_test_dict[source.lower()]
+                                  for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
+
         x_source_te, y_source_te = shuffle(x_source_te, y_source_te, random_state=1234)
         x_val, y_val = x_source_te, y_source_te
 
@@ -200,6 +185,8 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     ##########################################
     prediction_layer = tf.keras.Sequential([], name='prediction_layer')
     domain_adaptation = True if method is not None else False
+
+    kernel = tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=sigma_median, amplitude=5, feature_ndims=1)
     if domain_adaptation:
         num_domains = domain_adaptation_spec_dict['num_domains']
         sigma = domain_adaptation_spec_dict['sigma']
@@ -234,7 +221,8 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     ###     INITIALIZE MODEL
     ##########################################
     # DomainAdaptationModel has one feature_extractor (that may be used in the fine tune stage) and one prediction layer
-    model = DomainAdaptationModel(feature_extractor=feature_extractor, prediction_layer=prediction_layer)
+    model = DomainAdaptationModel(feature_extractor=feature_extractor,
+                                  prediction_layer=prediction_layer)
 
     model.build(input_shape=x_source_tr.shape)
     model.feature_extractor.summary()
@@ -252,13 +240,36 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                   )
 
     run_start = datetime.now()
-    #domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True, max_sample_size=5000)
+    #domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True,
+    # max_sample_size=5000)
     hist = model.fit(x=x_source_tr, y=y_source_tr, epochs=num_epochs, verbose=2,
                      batch_size=batch_size, shuffle=False,
                      validation_data=(x_val, y_val),
                      callbacks=callback,
                      )
     run_end = datetime.now()
+
+    ##################################
+    ###         MMD MATRIX        ####
+    ##################################
+
+    x_digits_data_list = list(digits_data.x_train_dict.values()) + list(digits_data.x_test_dict.values())
+
+    x_digits_data_list = [np.array(digits_data.x_train_dict[key]) for key in digits_data.x_train_dict.keys()]
+    x_data = [model.feature_extractor.predict(x_source[:2000]) for x_source in x_digits_data_list]
+
+    dg_layer = model.get_dg_layer()
+    dg_kernel = dg_layer.kernel
+    domain_basis = dg_layer.get_domain_basis()
+    domain_basis.update({"x_{}".format(i + 1): x_data[i] for i in range(len(x_data))})
+
+    domains_values = list(domain_basis.values())
+    doamain_keys = list(domain_basis.keys())
+    mmd_matrix = get_mmd_matrix(domains_values, kernel=dg_kernel)
+
+    mmd_matrix_df = pd.DataFrame(mmd_matrix, columns=doamain_keys, index=doamain_keys)
+
+    print(mmd_matrix_df)
 
     # model evaluation
     model_res = model.evaluate(x_target_te, y_target_te, verbose=0)
@@ -271,7 +282,8 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         run_id = np.random.randint(0, 10000, 1)[0]
         save_dir_path = os.path.join(res_file_dir, "run_" + str(run))
         create_dir_if_not_exists(save_dir_path)
-        save_dir_path = os.path.join(save_dir_path, "SINGLE_BEST") if single_best else os.path.join(save_dir_path, "SOURCE_COMBINED")
+        save_dir_path = os.path.join(save_dir_path, "SINGLE_BEST") if single_best else os.path.join(save_dir_path,
+                                                                                                    "SOURCE_COMBINED")
 
         create_dir_if_not_exists(save_dir_path)
 
@@ -395,25 +407,30 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
             model.feature_extractor.summary()
             model.prediction_layer.summary()
 
-            model.compile(optimizer=optimizer, loss=tf.keras.losses.CategoricalCrossentropy(from_logits=from_logits), metrics=metrics)
+            model.compile(optimizer=optimizer,
+                          loss=tf.keras.losses.CategoricalCrossentropy(from_logits=from_logits),
+                          metrics=metrics)
 
 
-            #domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True, max_sample_size=5000)
+            #domain_callback = DomainCallback(test_data=x_source_te,
+            # train_data=x_source_tr, print_res=True, max_sample_size=5000)
 
 
             print('\n BEGIN FINE TUNING:\t' + method.upper() + "\t" + TARGET_DOMAIN[0] + "\n")
-            hist = model.fit(x=x_source_tr, y=y_source_tr.astype(np.float32), epochs=num_epochs_FT, verbose=2,
-                                   batch_size=batch_size, shuffle=False, validation_data=(x_val, y_val),
-                                   callbacks=[callback]
+            hist = model.fit(x=x_source_tr, y=y_source_tr.astype(np.float32),
+                             epochs=num_epochs_FT, verbose=2, batch_size=batch_size,
+                             shuffle=False, validation_data=(x_val, y_val),
+                             callbacks=[callback]
                                    )
+
             model.evaluate(x_target_te, y_target_te, verbose=2)
 
             if save_plot or save_file:
                 run_id = np.random.randint(0, 10000, 1)[0]
                 save_dir_path = os.path.join(res_file_dir, "run_" + str(run))
                 create_dir_if_not_exists(save_dir_path)
-                save_dir_path = os.path.join(save_dir_path, "SINGLE_BEST") if single_best else os.path.join(save_dir_path,
-                                                                                                           "SOURCE_COMBINED")
+                save_dir_path = os.path.join(save_dir_path,
+                                     "SINGLE_BEST") if single_best else os.path.join(save_dir_path,"SOURCE_COMBINED")
                 create_dir_if_not_exists(save_dir_path)
 
                 save_dir_path = os.path.join(save_dir_path, TARGET_DOMAIN[0])
@@ -572,20 +589,35 @@ def run_experiment(experiment, gpu=None):
         pass
 
 
+def MMD(x1, x2, kernel):
+    return np.mean(kernel.matrix(x1, x1)) - 2 * np.mean(kernel.matrix(x1, x2)) + np.mean(kernel.matrix(x2, x2))
+
+
+def get_mmd_matrix(x_data, kernel):
+    num_ds = len(x_data) if type(x_data) == list else 1
+    mmd_matrix = np.zeros((num_ds, num_ds))
+    for i in range(num_ds):
+        x_i = x_data[i]
+        for j in range(i, num_ds):
+            x_j = x_data[j]
+            mmd_matrix[i, j] = mmd_matrix[j, i] = MMD(x_i, x_j, kernel=kernel)
+
+    return mmd_matrix
+
+
+
+
 GPUS = [2]
-# GPUS = [2]
 
 if __name__ == "__main__":
 
-    # load data once
     digits_data = DigitsData()
     #digits_data.to_pickle("/headwind/misc/domain-adaptation/digits/simon/run-all/Data/all.pkl")
     #digits_data = pd.read_pickle("/headwind/misc/domain-adaptation/digits/simon/run-all/Data/all.pkl")
     #for i in range(5):
     for i in [0]:
         experiments = []
-        for method in ['mmd']:
-        #for method in ['projected']:
+        for method in ['projection']:
             for kernel in [None]:
                 for TEST_SOURCES in [['mnistm'], ['mnist'], ['syn'], ['svhn'], ['usps']]:
                     for batch_norm in [True]:  # , False]:

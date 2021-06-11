@@ -7,3 +7,4 @@ tigramite
 .DS_Store
 /.idea/
 /SimulationExperiments/toy_example/
+/Visualization/digits_experiments_results/

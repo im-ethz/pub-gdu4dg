@@ -106,7 +106,12 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
 
         if self.orth_pen_method.lower() in ['srip', "so", "mc"]:
                 domains = self.domains + [weight_matrix]
-                self.gram_matrix = gram_matrix = tf.map_fn(fn=lambda d_j: tf.map_fn(fn=lambda d_k: reduce_mean(self.kernel.matrix(d_j, d_k)), elems=stack(domains)), elems=stack(domains))
+                self.gram_matrix = gram_matrix = tf.map_fn(fn=lambda d_j:
+                                                 tf.map_fn(fn=lambda d_k:
+                                                 reduce_mean(self.kernel.matrix(d_j, d_k)),
+                                                            elems=stack(domains)),
+                                                            elems=stack(domains))
+
                 self.gram_diag = gram_diag = tf.linalg.diag(diag_part(gram_matrix))
 
 
@@ -123,7 +128,8 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
             self.orth_pen_name = "mutual_coherence"
 
         elif self.orth_pen_method.lower() == 'icp':
-            domain_orthogonality_penalty = reduce_sum([reduce_mean(self.kernel.matrix(domain, weight_matrix)) for domain in self.domains])
+            domain_orthogonality_penalty = reduce_sum([reduce_mean(self.kernel.matrix(domain, weight_matrix))
+                                                       for domain in self.domains])
             self.orth_pen_name = "cross_domain_IPS"
 
         else:
@@ -141,7 +147,9 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
 
 
         # final output
-        self.domain_penalty = (1/(self.num_domains + 1)) * (self.lambda_OLS * self.OLS_penalty + self.lambda_sparse * self.sparse_penalty + self.lambda_orth * self.orthogonal_penalty)
+        self.domain_penalty = (1/(self.num_domains + 1)) * (self.lambda_OLS * self.OLS_penalty +
+                                                            self.lambda_sparse * self.sparse_penalty +
+                                                            self.lambda_orth * self.orthogonal_penalty)
 
         return self.domain_penalty
 
@@ -333,10 +341,21 @@ class DomainRegularizer(tf.keras.regularizers.Regularizer):
         pen_1 = reduce_mean(diag_part(self.kernel.matrix(self.h, self.h)))
 
         # (2)
-        pen_2 = reduce_mean(vectorized_map(lambda d:  multiply(d[1], reduce_mean(self.kernel.matrix(d[0], self.h), axis=0)), elems=[stack(domains), alpha_coefficients]))
+        pen_2 = reduce_mean(vectorized_map(lambda d:
+                                           multiply(d[1], reduce_mean(self.kernel.matrix(d[0], self.h), axis=0)),
+                                           elems=[stack(domains), alpha_coefficients]))
 
         # (3)
-        pen_3 = reduce_mean(reduce_sum(vectorized_map(lambda d_j: d_j[1] * reduce_sum(transpose(vectorized_map(lambda d_k: d_k[1] * reduce_mean(self.kernel.matrix(d_k[0], d_j[0])), elems=[stack(domains), alpha_coefficients])), axis=-1), elems=[stack(domains), alpha_coefficients]), axis=0))
+        pen_3 = reduce_mean(reduce_sum(vectorized_map(lambda d_j:
+                                                      d_j[1] * reduce_sum(transpose(
+                                                          vectorized_map(lambda d_k:
+                                                                         d_k[1] *
+                                                                         reduce_mean(self.kernel.matrix(d_k[0], d_j[0])),
+                                                                         elems=[stack(domains), alpha_coefficients]))
+                                                          , axis=-1),
+                                                      elems=[stack(domains), alpha_coefficients]), axis=0))
+
+
 
         ols_penalty = sqrt(pen_1 + (-2) * pen_2 + pen_3)
 
@@ -400,7 +419,9 @@ class SOGram(tf.keras.regularizers.Regularizer):
 
     def __call__(self, weight_matrix):
         gram_matrix = (self.kernel.matrix(weight_matrix, weight_matrix))
-        return self.param * reduce_mean((tf.norm(tf.matmul(gram_matrix, tf.transpose(gram_matrix)) - tf.eye(weight_matrix.shape[0]), ord='fro', axis=(0, 1))))
+        return self.param * reduce_mean((tf.norm(tf.matmul(gram_matrix,
+                                                           tf.transpose(gram_matrix)) - tf.eye(weight_matrix.shape[0]),
+                                                 ord='fro', axis=(0, 1))))
 
 
 class SRIPGram(tf.keras.regularizers.Regularizer):
@@ -412,7 +433,9 @@ class SRIPGram(tf.keras.regularizers.Regularizer):
 
     def __call__(self, weight_matrix):
         gram_matrix = (self.kernel.matrix(weight_matrix, weight_matrix))
-        return self.param * (tf.linalg.svd(tf.matmul(gram_matrix, tf.transpose(gram_matrix)) - tf.eye(weight_matrix.shape[0]), compute_uv=False)[0])
+        return self.param * (tf.linalg.svd(tf.matmul(gram_matrix,
+                                                     tf.transpose(gram_matrix)) - tf.eye(weight_matrix.shape[0]),
+                                           compute_uv=False)[0])
 
 
 class HSICRegularizer(tf.keras.regularizers.Regularizer):
@@ -426,10 +449,10 @@ class HSICRegularizer(tf.keras.regularizers.Regularizer):
 
         # WARNING: each domain has to have the same dimension
         self.domain_dimension = domains[0].shape[0]
-        self.H = tf.eye(self.domain_dimension) - (1/self.domain_dimension) * tf.ones(shape=(self.domain_dimension, self.domain_dimension))
+        self.H = tf.eye(self.domain_dimension) - (1/self.domain_dimension) * tf.ones(shape=(self.domain_dimension,
+                                                                                            self.domain_dimension))
 
     def __call__(self, weight_matrix):
-
         # compute the Gram matrices of each domain
         gram_matrices = [self.H * self.kernel.matrix(domain, domain) * self.H for domain in self.domains]
 
@@ -444,17 +467,6 @@ class HSICRegularizer(tf.keras.regularizers.Regularizer):
 
 
     def set_domains(self, domains):
-        """
-
-        Parameters
-        ----------
-        domains :
-            
-
-        Returns
-        -------
-
-        """
         self.domains = domains
 
 
