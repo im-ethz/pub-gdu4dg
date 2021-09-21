@@ -42,6 +42,10 @@ os.chdir(os.path.dirname(abspath))
 sys.path.append(os.path.abspath(os.path.join(__file__, '../../..')))
 THIS_FILE = os.path.abspath(__file__)
 
+'''
+nohup /local/home/sfoell/anaconda3/envs/gdu4dg/bin/python3.8 -u /local/home/sfoell/MTEC-IM-309/pub-gdu4dg/SimulationExperiments/experiment_4_digits/digits_5_classification.py > /local/home/sfoell/MTEC-IM-309/pub-gdu4dg/SimulationExperiments/experiment_4_digits/orth_000.log 2>&1 &
+'''
+
 from Model.utils import decode_one_hot_vector
 from Visualization.evaluation_plots import plot_TSNE
 from SimulationExperiments.experiment_4_digits.d5_dataloader import load_digits
@@ -79,8 +83,12 @@ class DigitsData(object):
 def digits_classification(method, TARGET_DOMAIN, single_best=False, single_source_domain=None,
                           batch_norm=False,
                           lr=0.001,
-                          save_file=True, save_plot=False, save_feature=True,
+                          save_file=True, save_plot=False, save_feature=False,
                           activation="tanh",
+                          lambda_sparse = 0,  # 1e-1,
+                          lambda_OLS = 0,  # 1e-1,
+                          lambda_orth = 0,  # 1e-1,
+                          early_stopping = True,
                           bias=False,
                           fine_tune=True,
                           kernel=None,
@@ -93,7 +101,6 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         "sigma": 7.5,
         'softness_param': 2,
         "similarity_measure": method,# MMD, IPS
-        "lambda_orth": 1e-8,
         "img_shape": img_shape,
         "bias": bias,
         "source_sample_size": SOURCE_SAMPLE_SIZE,
@@ -105,6 +112,11 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
     domain_adaptation_spec_dict["kernel"] = "custom" if kernel is not None else "single"
 
+    # specification of regularization
+    domain_adaptation_spec_dict["lambda_sparse"] = lambda_sparse
+    domain_adaptation_spec_dict["lambda_OLS"] = lambda_OLS
+    domain_adaptation_spec_dict["lambda_orth"] = lambda_orth
+
     # used in case of "projected"
     domain_adaptation_spec_dict["orth_reg"] = reg = "SRIP"
     domain_adaptation_spec_dict['reg_method'] = orth_reg_method = reg if method == 'projected' else 'none'
@@ -113,9 +125,9 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     use_optim = domain_adaptation_spec_dict['use_optim'] = 'adam' #"SGD"
     optimizer = tf.keras.optimizers.SGD(lr) if use_optim.lower() =="sgd" else tf.keras.optimizers.Adam(lr)
 
-    batch_size = domain_adaptation_spec_dict['batch_size'] = 512
-    domain_adaptation_spec_dict['epochs'] = num_epochs = 250
-    domain_adaptation_spec_dict['epochs_FT'] = num_epochs_FT = 250
+    batch_size = domain_adaptation_spec_dict['batch_size'] = 128
+    domain_adaptation_spec_dict['epochs'] = num_epochs = 250 if early_stopping else 100
+    domain_adaptation_spec_dict['epochs_FT'] = num_epochs_FT = 250 if early_stopping else 100
     domain_adaptation_spec_dict['lr'] = lr
     domain_adaptation_spec_dict['dropout'] = dropout = 0.5
     domain_adaptation_spec_dict['patience'] = patience = 10
@@ -155,10 +167,6 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         y_target_te = np.concatenate([data.y_test_dict[source] for source in TARGET_DOMAIN], axis=0)
         x_target_te, y_target_te = shuffle(x_target_te, y_target_te, random_state=1234)
 
-
-
-        x_val, y_val = shuffle(x_target_te, y_target_te, random_state=1234)
-
         print("\n FINISHED LOADING DIGITS")
 
 
@@ -185,6 +193,8 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         domain_dim = domain_adaptation_spec_dict['domain_dim']
         similarity_measure = domain_adaptation_spec_dict["similarity_measure"]
         softness_param = domain_adaptation_spec_dict["softness_param"]
+
+
         prediction_layer.add(DGLayer(domain_units=num_domains,
                                      N=domain_dim,
                                      softness_param=softness_param,
@@ -195,15 +205,29 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                                      bias=bias,
                                      similarity_measure=similarity_measure,
                                      orth_reg_method=orth_reg_method,
+                                     lambda_sparse=lambda_sparse,
+                                     lambda_OLS=lambda_OLS,
+                                     lambda_orth=lambda_orth,
                                      ))
 
     else:
         method = "SOURCE_ONLY"
-        prediction_layer.add(Dense(10))
+        prediction_layer.add(Dense(10, activation=activation))
 
     callback = [EarlyStopping(patience=patience, restore_best_weights=True)]
     domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True,
                                      max_sample_size=5000)
+
+    if early_stopping and domain_adaptation:
+        callbacks = [callback, domain_callback]
+
+    elif early_stopping and domain_adaptation==False:
+        callbacks = [callback]
+
+    elif early_stopping == False:
+        callbacks = domain_callback if domain_adaptation else None
+
+
     ##########################################
     ###     INITIALIZE MODEL
     ##########################################
@@ -230,7 +254,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     hist = model.fit(x=x_source_tr, y=y_source_tr, epochs=num_epochs, verbose=2,
                      batch_size=batch_size, shuffle=False,
                      validation_data=(x_val, y_val),
-                     callbacks=[callback,domain_callback] if domain_adaptation else callback,
+                     callbacks=callbacks,
                      )
     run_end = datetime.now()
 
@@ -320,7 +344,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         feature_extractor_filepath = os.path.join(save_dir_path, 'feature_extractor.h5.tmp')
         feature_extractor.save(feature_extractor_filepath)
 
-        for similarity_measure in ['cosine_similarity']:
+        for similarity_measure in ['cosine_similarity' , 'MMD','projected']:
 
             prediction_layer = tf.keras.Sequential([], name='prediction_layer')
 
@@ -352,6 +376,9 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                                          bias=bias,
                                          similarity_measure=similarity_measure,
                                          orth_reg_method=orth_reg_method,
+                                         lambda_sparse=lambda_sparse,
+                                         lambda_OLS=lambda_OLS,
+                                         lambda_orth=lambda_orth,
                                          ))
 
             model = DomainAdaptationModel(feature_extractor=feature_extractor, prediction_layer=prediction_layer)
@@ -365,11 +392,16 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
             callback = [EarlyStopping(patience=patience, restore_best_weights=True)]
             domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True, max_sample_size=5000)
 
+            if early_stopping:
+                callbacks = [callback, domain_callback]
+
+            else:
+                callbacks = domain_callback
 
             print('\n BEGIN FINE TUNING:\t' + method.upper() + "\t" + TARGET_DOMAIN[0] + "\n")
             hist = model.fit(x=x_source_tr, y=y_source_tr.astype(np.float32), epochs=num_epochs_FT, verbose=2,
                                    batch_size=batch_size, shuffle=False, validation_data=(x_val, y_val),
-                                   callbacks=[callback, domain_callback]
+                                   callbacks=callbacks
                                    )
             model.evaluate(x_target_te, y_target_te, verbose=2)
 
@@ -534,10 +566,7 @@ def get_kernel_sum(sigma_list):
     return kernel_sum
 
 
-def run_experiment(experiment, gpu=None):
-    if gpu is not None:
-        init_gpu(gpu)
-
+def run_experiment(experiment):
     try:
         digits_classification(**experiment)
     except Exception:
@@ -545,43 +574,32 @@ def run_experiment(experiment, gpu=None):
         traceback.print_exc()
         pass
 
-
-GPUS = [2]
-# GPUS = [2]
-
 if __name__ == "__main__":
 
     # load data once
     digits_data = DigitsData()
-    #for i in range(5):
-    for i in [0]:
+    for i in [4]:
         experiments = []
-        for method in ['cosine_similarity' , 'MMD','projected']:
-            for kernel in [None]:
+        for method in [None, 'cosine_similarity' , 'MMD', 'projected']:
                 for TEST_SOURCES in [['mnistm'], ['mnist'], ['syn'], ['svhn'], ['usps']]:
-                    for batch_norm in [True]:  # , False]:
-                        for bias in [False]:  # , True]:
-                            #for single_source in [['mnistm'], ['mnist'], ['svhn'], ['syn'], ['usps']]:
-                                experiments.append({
-                                    'data': digits_data,
-                                    'method': method,
-                                    'kernel': kernel,
-                                    'batch_norm': batch_norm,
-                                    'bias': bias,
-                                    'TARGET_DOMAIN': TEST_SOURCES,
-                                    #'single_source_domain': single_source,
-                                    'run' : i
-                                })
+                    #Adapting:
+                    for EARLY_STOPPING in [True]:
+                        for LAMBDA_SPARSE in [1e-3]:
+                            for LAMBDA_OLS in [1e-3]:
+                                    experiments.append({
+                                        'data': digits_data,
+                                        'method': method,
+                                        'kernel': None,
+                                        'TARGET_DOMAIN': TEST_SOURCES,
+                                        'lambda_sparse' : LAMBDA_SPARSE,
+                                        'lambda_OLS' : LAMBDA_OLS,
+                                        'lambda_orth' : 1e-3,
+                                        'early_stopping': EARLY_STOPPING,
+                                        'run' : i
+                                    })
 
-        print(f'Running {len(experiments)} experiments on {len(GPUS)} GPUs')
+        print(f'Running {len(experiments)} experiments')
 
-        if len(GPUS) > 1:
-            init_gpu(GPUS)
-            pool = multiprocessing.pool.Pool(processes=min(len(experiments), len(GPUS)))
-            for i, experiment in enumerate(experiments):
-                pool.apply_async(run_experiment, (experiment, None))
-            pool.close()
-            pool.join()
-        else:
-            for experiment in experiments:
-                run_experiment(experiment)
+        for experiment in experiments:
+            run_experiment(experiment)
+
