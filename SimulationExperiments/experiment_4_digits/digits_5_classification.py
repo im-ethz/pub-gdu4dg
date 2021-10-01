@@ -1,35 +1,26 @@
 import warnings
+
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 from silence_tensorflow import silence_tensorflow
+
 silence_tensorflow()
 
-
-import os
 import sys
 import keras
-import skimage
+import itertools
 import logging
-import multiprocessing
-
-
-import numpy as np
 import pandas as pd
-
 import tensorflow as tf
+
 tf.random.set_seed(1234)
 
-import matplotlib.pyplot as plt
-import tensorflow_probability as tfp
 
 from datetime import datetime
 from sklearn.utils import shuffle
-from sklearn.metrics.pairwise import euclidean_distances
 
-from tensorflow.python.keras.layers import *
 from tensorflow.python.keras.callbacks import EarlyStopping
-from tensorflow_probability.python.math.psd_kernels.positive_semidefinite_kernel import _SumKernel
-
+from digits_utils import *
 
 logging.disable(logging.WARNING)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -54,21 +45,23 @@ from Model.DomainAdaptation.domain_adaptation_layer import DGLayer
 from Model.DomainAdaptation.DomainAdaptationModel import DomainAdaptationModel
 from Model.DomainAdaptation.domain_adaptation_callback import DomainCallback
 
+
 def init_gpu(gpu, memory):
     used_gpu = gpu
     gpus = tf.config.experimental.list_physical_devices('GPU')
     if gpus:
         try:
             tf.config.experimental.set_visible_devices(gpus[used_gpu], 'GPU')
-            tf.config.experimental.set_virtual_device_configuration(gpus[used_gpu], [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=memory)])
+            tf.config.experimental.set_virtual_device_configuration(gpus[used_gpu], [
+                tf.config.experimental.VirtualDeviceConfiguration(memory_limit=memory)])
         except RuntimeError as e:
             print(e)
 
+
 init_gpu(gpu=0, memory=6000)
 
-# file path to the location where the results are stored
-
-res_file_dir = "/local/home/sfoell/NeurIPS/results/test"
+# File path to the location where the results are stored
+res_file_dir = "/local/home/sfoell/NeurIPS/results/test" # TODO: add this as a parsed argument
 SOURCE_SAMPLE_SIZE = 25000
 TARGET_SAMPLE_SIZE = 9000
 img_shape = (32, 32, 3)
@@ -85,30 +78,29 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                           lr=0.001,
                           save_file=True, save_plot=False, save_feature=False,
                           activation="tanh",
-                          lambda_sparse = 0,  # 1e-1,
-                          lambda_OLS = 0,  # 1e-1,
-                          lambda_orth = 0,  # 1e-1,
-                          early_stopping = True,
+                          lambda_sparse=0,  # 1e-1,
+                          lambda_OLS=0,  # 1e-1,
+                          lambda_orth=0,  # 1e-1,
+                          early_stopping=True,
                           bias=False,
                           fine_tune=True,
                           kernel=None,
-                          data: DigitsData=None,
+                          data: DigitsData = None,
                           run=None):
-
     domain_adaptation_spec_dict = {
         "num_domains": 5,
         "domain_dim": 10,
         "sigma": 7.5,
         'softness_param': 2,
-        "similarity_measure": method,# MMD, IPS
+        "similarity_measure": method,  # MMD, IPS
         "img_shape": img_shape,
         "bias": bias,
         "source_sample_size": SOURCE_SAMPLE_SIZE,
         "target_sample_size": TARGET_SAMPLE_SIZE
     }
 
-    #architecture used as feature extractor
-    architecture = domain_adaptation_spec_dict["architecture"] ="DomainNet" # "DomainNet"# "LeNet"
+    # architecture used as feature extractor
+    architecture = domain_adaptation_spec_dict["architecture"] = "DomainNet"  # "DomainNet"# "LeNet"
 
     domain_adaptation_spec_dict["kernel"] = "custom" if kernel is not None else "single"
 
@@ -122,8 +114,8 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     domain_adaptation_spec_dict['reg_method'] = orth_reg_method = reg if method == 'projected' else 'none'
 
     # training specification
-    use_optim = domain_adaptation_spec_dict['use_optim'] = 'adam' #"SGD"
-    optimizer = tf.keras.optimizers.SGD(lr) if use_optim.lower() =="sgd" else tf.keras.optimizers.Adam(lr)
+    use_optim = domain_adaptation_spec_dict['use_optim'] = 'adam'  # "SGD"
+    optimizer = tf.keras.optimizers.SGD(lr) if use_optim.lower() == "sgd" else tf.keras.optimizers.Adam(lr)
 
     batch_size = domain_adaptation_spec_dict['batch_size'] = 128
     domain_adaptation_spec_dict['epochs'] = num_epochs = 250 if early_stopping else 100
@@ -144,22 +136,26 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         SOURCE_DOMAINS = single_source_domain
     else:
         SOURCE_DOMAINS = ['mnist', 'mnistm', 'svhn', 'syn', 'usps']
-    #print(single_source_domain)
+    # print(single_source_domain)
     # dataset used in K3DA
 
     if (single_best == True) & (SOURCE_DOMAINS[0] == TARGET_DOMAIN[0].lower()):
         print('Source and target domain are the same! Skip!')
         return None
     else:
-        x_source_tr = np.concatenate([data.x_train_dict[source.lower()] for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
-        y_source_tr = np.concatenate([data.y_train_dict[source.lower()] for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
+        x_source_tr = np.concatenate([data.x_train_dict[source.lower()] for source in SOURCE_DOMAINS if
+                                      source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
+        y_source_tr = np.concatenate([data.y_train_dict[source.lower()] for source in SOURCE_DOMAINS if
+                                      source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
 
-        #tf.data.Dataset.from_tensor_slices((x_source_tr, y_source_tr)).cache().prefetch(buffer_size=tf.data.AUTOTUNE)
+        # tf.data.Dataset.from_tensor_slices((x_source_tr, y_source_tr)).cache().prefetch(buffer_size=tf.data.AUTOTUNE)
 
         x_source_tr, y_source_tr = shuffle(x_source_tr, y_source_tr, random_state=1234)
 
-        x_source_te = np.concatenate([data.x_test_dict[source.lower()] for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
-        y_source_te = np.concatenate([data.y_test_dict[source.lower()] for source in SOURCE_DOMAINS if source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
+        x_source_te = np.concatenate([data.x_test_dict[source.lower()] for source in SOURCE_DOMAINS if
+                                      source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
+        y_source_te = np.concatenate([data.y_test_dict[source.lower()] for source in SOURCE_DOMAINS if
+                                      source.lower() != TARGET_DOMAIN[0].lower()], axis=0)
         x_source_te, y_source_te = shuffle(x_source_te, y_source_te, random_state=1234)
         x_val, y_val = x_source_te, y_source_te
 
@@ -169,17 +165,16 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
         print("\n FINISHED LOADING DIGITS")
 
-
     ##########################################
     ###     FEATURE EXTRACTOR
     ##########################################
-    if architecture.lower() =="lenet":
+    if architecture.lower() == "lenet":
         feature_extractor = get_lenet_feature_extractor()
 
     else:
         feature_extractor = get_domainnet_feature_extractor(dropout=dropout)
 
-    #if batch_norm:
+    # if batch_norm:
     #    feature_extractor.add(BatchNormalization())
 
     ##########################################
@@ -193,7 +188,6 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         domain_dim = domain_adaptation_spec_dict['domain_dim']
         similarity_measure = domain_adaptation_spec_dict["similarity_measure"]
         softness_param = domain_adaptation_spec_dict["softness_param"]
-
 
         prediction_layer.add(DGLayer(domain_units=num_domains,
                                      N=domain_dim,
@@ -221,12 +215,11 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     if early_stopping and domain_adaptation:
         callbacks = [callback, domain_callback]
 
-    elif early_stopping and domain_adaptation==False:
+    elif early_stopping and domain_adaptation == False:
         callbacks = [callback]
 
     elif early_stopping == False:
         callbacks = domain_callback if domain_adaptation else None
-
 
     ##########################################
     ###     INITIALIZE MODEL
@@ -244,10 +237,10 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     print('\n\n\n BEGIN TRAIN:\t METHOD:' + method.upper() + "\t\t\t TARGET_DOMAIN:" + TARGET_DOMAIN[0] + "\n\n\n")
 
     model.compile(
-                  optimizer=optimizer,
-                  loss=tf.keras.losses.CategoricalCrossentropy(from_logits=from_logits),
-                  metrics=metrics,
-                  )
+        optimizer=optimizer,
+        loss=tf.keras.losses.CategoricalCrossentropy(from_logits=from_logits),
+        metrics=metrics,
+    )
 
     run_start = datetime.now()
 
@@ -269,7 +262,8 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         run_id = np.random.randint(0, 10000, 1)[0]
         save_dir_path = os.path.join(res_file_dir, "run_" + str(run))
         create_dir_if_not_exists(save_dir_path)
-        save_dir_path = os.path.join(save_dir_path, "SINGLE_BEST") if single_best else os.path.join(save_dir_path, "SOURCE_COMBINED")
+        save_dir_path = os.path.join(save_dir_path, "SINGLE_BEST") if single_best else os.path.join(save_dir_path,
+                                                                                                    "SOURCE_COMBINED")
 
         create_dir_if_not_exists(save_dir_path)
 
@@ -299,9 +293,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
             tsne_file_path = os.path.join(save_dir_path, file_name)
             plot_TSNE(X_DATA, Y_DATA, plot_kde=False, file_path=tsne_file_path, show_plot=False)
 
-
     if save_file:
-
         hist_df = pd.DataFrame(hist.history)
         duration = run_end - run_start
 
@@ -334,7 +326,6 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         eval_file_path = os.path.join(save_dir_path, file_name_eval)
         eval_df.to_csv(eval_file_path)
 
-
     ##########################################
     #               FINE TUNE                #
     ##########################################
@@ -344,7 +335,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         feature_extractor_filepath = os.path.join(save_dir_path, 'feature_extractor.h5.tmp')
         feature_extractor.save(feature_extractor_filepath)
 
-        for similarity_measure in ['cosine_similarity' , 'MMD','projected']:
+        for similarity_measure in ['cosine_similarity', 'MMD', 'projected']:
 
             prediction_layer = tf.keras.Sequential([], name='prediction_layer')
 
@@ -387,10 +378,12 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
             model.feature_extractor.summary()
             model.prediction_layer.summary()
 
-            model.compile(optimizer=optimizer, loss=tf.keras.losses.CategoricalCrossentropy(from_logits=from_logits), metrics=metrics)
+            model.compile(optimizer=optimizer, loss=tf.keras.losses.CategoricalCrossentropy(from_logits=from_logits),
+                          metrics=metrics)
 
             callback = [EarlyStopping(patience=patience, restore_best_weights=True)]
-            domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True, max_sample_size=5000)
+            domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True,
+                                             max_sample_size=5000)
 
             if early_stopping:
                 callbacks = [callback, domain_callback]
@@ -400,17 +393,18 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
             print('\n BEGIN FINE TUNING:\t' + method.upper() + "\t" + TARGET_DOMAIN[0] + "\n")
             hist = model.fit(x=x_source_tr, y=y_source_tr.astype(np.float32), epochs=num_epochs_FT, verbose=2,
-                                   batch_size=batch_size, shuffle=False, validation_data=(x_val, y_val),
-                                   callbacks=callbacks
-                                   )
+                             batch_size=batch_size, shuffle=False, validation_data=(x_val, y_val),
+                             callbacks=callbacks
+                             )
             model.evaluate(x_target_te, y_target_te, verbose=2)
 
             if save_plot or save_file:
                 run_id = np.random.randint(0, 10000, 1)[0]
                 save_dir_path = os.path.join(res_file_dir, "run_" + str(run))
                 create_dir_if_not_exists(save_dir_path)
-                save_dir_path = os.path.join(save_dir_path, "SINGLE_BEST") if single_best else os.path.join(save_dir_path,
-                                                                                                           "SOURCE_COMBINED")
+                save_dir_path = os.path.join(save_dir_path, "SINGLE_BEST") if single_best else os.path.join(
+                    save_dir_path,
+                    "SOURCE_COMBINED")
                 create_dir_if_not_exists(save_dir_path)
 
                 save_dir_path = os.path.join(save_dir_path, TARGET_DOMAIN[0])
@@ -480,92 +474,6 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     return None
 
 
-def MMD(x1, x2, kernel):
-    return np.mean(kernel.matrix(x1, x1)) - 2 * np.mean(kernel.matrix(x1, x2)) + np.mean(kernel.matrix(x2, x2))
-
-def get_mmd_matrix(x_data, kernel):
-    num_ds = len(x_data) if type(x_data) == list else 1
-    mmd_matrix = np.zeros((num_ds, num_ds))
-    for i in range (num_ds):
-        x_i = x_data[i]
-        for j in range (i, num_ds):
-            x_j = x_data[j]
-            mmd_matrix[i, j] = mmd_matrix[j, i] = MMD(x_i, x_j, kernel = kernel)
-    return mmd_matrix
-
-def sigma_median(x_data, sample_size=5000):
-    x_data = x_data[:sample_size]
-    sigma_median = np.median(euclidean_distances(x_data, x_data))
-    return sigma_median
-
-
-def get_domainnet_feature_extractor(dropout=0.5):
-    feature_exctractor = tf.keras.Sequential([
-        Conv2D(64, strides=(1, 1), kernel_size=(5, 5), padding="same", input_shape=img_shape)
-        , BatchNormalization()
-        , tf.keras.layers.ReLU()
-        , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
-
-        , Conv2D(64, strides=(1, 1), kernel_size=(5, 5), padding="same")
-        , BatchNormalization()
-        , tf.keras.layers.ReLU()
-        , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
-
-        , Conv2D(128, strides=(1, 1), kernel_size=(5, 5), padding="same")
-        , BatchNormalization()
-        , tf.keras.layers.ReLU()
-        , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
-
-        , Flatten()
-        , Dense(3072)
-        , BatchNormalization()
-        , tf.keras.layers.ReLU()
-        , Dropout(dropout)
-
-        , Dense(2048)
-        , BatchNormalization()
-        , tf.keras.layers.ReLU()
-    ], name='feature_extractor_domainnet_digits')
-
-    return feature_exctractor
-
-def get_lenet_feature_extractor():
-    feature_exctractor = tf.keras.Sequential([
-        Conv2D(32, kernel_size=(3, 3), activation='relu')
-        , BatchNormalization()
-        , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
-        , Conv2D(64, kernel_size=(2, 2), activation='relu')
-        , BatchNormalization()
-        , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
-        , Flatten()
-        , Dense(100, activation="relu")
-        , Dense(100, activation="relu")
-    ], name='feature_extractor')
-    return feature_exctractor
-
-
-def lr_scheduler(epoch, lr):
-    return lr * tf.math.exp(-0.05)
-
-
-def create_dir_if_not_exists(dir_path):
-    if not os.path.exists(dir_path):
-        os.mkdir(dir_path)
-        print("\n \n CREATED DIRECTORY: {}".format(dir_path))
-
-
-def get_kernel_sum(sigma_list):
-    amplitude_list = [1]
-    kernels = [tfp.math.psd_kernels.ExponentiatedQuadratic(length_scale=sigma, amplitude=amplitude) for sigma in
-               sigma_list for amplitude in amplitude_list] + \
-              [tfp.math.psd_kernels.MaternFiveHalves(length_scale=sigma, amplitude=amplitude) for sigma in sigma_list
-               for amplitude in amplitude_list] + \
-              [tfp.math.psd_kernels.RationalQuadratic(length_scale=sigma, amplitude=amplitude) for sigma in sigma_list
-               for amplitude in amplitude_list]
-    kernel_sum = _SumKernel(kernels=kernels)
-    return kernel_sum
-
-
 def run_experiment(experiment):
     try:
         digits_classification(**experiment)
@@ -574,32 +482,29 @@ def run_experiment(experiment):
         traceback.print_exc()
         pass
 
+
 if __name__ == "__main__":
 
     # load data once
     digits_data = DigitsData()
     for i in [4]:
         experiments = []
-        for method in [None, 'cosine_similarity' , 'MMD', 'projected']:
-                for TEST_SOURCES in [['mnistm'], ['mnist'], ['syn'], ['svhn'], ['usps']]:
-                    #Adapting:
-                    for EARLY_STOPPING in [True]:
-                        for LAMBDA_SPARSE in [1e-3]:
-                            for LAMBDA_OLS in [1e-3]:
-                                    experiments.append({
-                                        'data': digits_data,
-                                        'method': method,
-                                        'kernel': None,
-                                        'TARGET_DOMAIN': TEST_SOURCES,
-                                        'lambda_sparse' : LAMBDA_SPARSE,
-                                        'lambda_OLS' : LAMBDA_OLS,
-                                        'lambda_orth' : 1e-3,
-                                        'early_stopping': EARLY_STOPPING,
-                                        'run' : i
-                                    })
+        for experiment in itertools.product([None, 'cosine_similarity', 'MMD', 'projected'],
+                                            [['mnistm'], ['mnist'], ['syn'], ['svhn'], ['usps']],
+                                            [True], [1e-3], [1e-3]):
+            experiments.append({
+                'data': digits_data,
+                'method': experiment[0],
+                'kernel': None,
+                'TARGET_DOMAIN': experiment[1],
+                'lambda_sparse': experiment[3],
+                'lambda_OLS': experiment[4],
+                'lambda_orth': 1e-3,
+                'early_stopping': experiment[2],
+                'run': i
+            })
 
         print(f'Running {len(experiments)} experiments')
 
         for experiment in experiments:
             run_experiment(experiment)
-

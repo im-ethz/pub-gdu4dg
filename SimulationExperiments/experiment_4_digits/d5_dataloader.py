@@ -7,9 +7,9 @@ from scipy.io import loadmat
 from os import path
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
-import matplotlib.pyplot as plt
 
-base_path = "/headwind/misc/datasets/digitfive"
+base_path = "/local/home/pokanovic/project2/data/DigitFive"
+
 
 class DigitFiveDataset(data.Dataset):
     def __init__(self, data, labels, transform=None, target_transform=None):
@@ -190,7 +190,8 @@ def load_digits(domains=["mnist", "mnistm", "svhn", "syn", "usps"], one_hot=True
     y_test_dict = {}
     for domain in domains:
         print(domain)
-        train_loader, test_loader = digit5_dataset_read(base_path=base_path, domain=domain, batch_size=int(1e10), test_size=test_size)
+        train_loader, test_loader = digit5_dataset_read(base_path=base_path, domain=domain, batch_size=int(1e10),
+                                                        test_size=test_size)
 
         x_train, y_train = next(iter(train_loader))
         x_train = np.transpose(x_train, (0, 2, 3, 1))
@@ -202,24 +203,15 @@ def load_digits(domains=["mnist", "mnistm", "svhn", "syn", "usps"], one_hot=True
             y_train = F.one_hot(y_train.to(torch.int64), num_classes=10)
             y_test = F.one_hot(y_test.to(torch.int64), num_classes=10)
 
-        x_train_dict[domain]=x_train
-        y_train_dict[domain]=y_train
-        x_test_dict[domain]=x_test
-        y_test_dict[domain]=y_test
+        x_train_dict[domain] = x_train
+        y_train_dict[domain] = y_train
+        x_test_dict[domain] = x_test
+        y_test_dict[domain] = y_test
 
     return x_train_dict, y_train_dict, x_test_dict, y_test_dict
 
 
-
-
-
-
 if __name__ == "__main__":
-
     load_usps(base_path)
-
     x_train, y_train, x_test, y_test = load_usps(base_path)
-
     x_train, y_train, x_test, y_test = load_mnist_m(base_path)
-
-
