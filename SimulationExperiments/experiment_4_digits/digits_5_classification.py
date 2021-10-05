@@ -10,6 +10,7 @@ import sys
 import keras
 import itertools
 import logging
+from d5_argparser import parser_args
 import pandas as pd
 import tensorflow as tf
 
@@ -483,10 +484,7 @@ def run_experiment(experiment):
         pass
 
 
-if __name__ == "__main__":
-
-    # load data once
-    digits_data = DigitsData()
+def run_all_experiments(digits_data):
     for i in [4]:
         experiments = []
         for experiment in itertools.product([None, 'cosine_similarity', 'MMD', 'projected'],
@@ -508,3 +506,25 @@ if __name__ == "__main__":
 
         for experiment in experiments:
             run_experiment(experiment)
+
+
+if __name__ == "__main__":
+    args = parser_args()
+    # load data once
+    digits_data = DigitsData()
+    if args.run_all:
+        run_all_experiments(digits_data)
+    else:
+        experiment = {
+            'data': digits_data,
+            'method': args.method,
+            'kernel': None,
+            'TARGET_DOMAIN': [args.TARGET_DOMAIN],
+            'lambda_sparse': args.lambda_sparse,
+            'lambda_OLS': args.lambda_OLS,
+            'lambda_orth': 1e-3,
+            'early_stopping': args.early_stopping,
+            'run': 4
+        }
+        run_experiment(experiment)
+
