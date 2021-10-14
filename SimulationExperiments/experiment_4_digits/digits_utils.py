@@ -5,6 +5,7 @@ import tensorflow as tf
 from tensorflow.python.keras.layers import *
 from tensorflow_probability.python.math.psd_kernels.positive_semidefinite_kernel import _SumKernel
 import tensorflow_probability as tfp
+from pathlib import Path
 
 img_shape = (32, 32, 3)
 
@@ -82,7 +83,7 @@ def lr_scheduler(epoch, lr):
 
 def create_dir_if_not_exists(dir_path):
     if not os.path.exists(dir_path):
-        os.mkdir(dir_path)
+        Path(dir_path).mkdir(parents=True, exist_ok=True)
         print("\n \n CREATED DIRECTORY: {}".format(dir_path))
 
 

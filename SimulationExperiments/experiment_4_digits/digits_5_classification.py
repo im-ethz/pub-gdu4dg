@@ -20,7 +20,7 @@ tf.random.set_seed(1234)
 from datetime import datetime
 from sklearn.utils import shuffle
 
-from tensorflow.python.keras.callbacks import EarlyStopping
+from tensorflow.python.keras.callbacks import EarlyStopping # TODO: tensorflow.python.keras.callbacks
 from digits_utils import *
 
 logging.disable(logging.WARNING)
@@ -36,6 +36,11 @@ THIS_FILE = os.path.abspath(__file__)
 
 '''
 nohup /local/home/sfoell/anaconda3/envs/gdu4dg/bin/python3.8 -u /local/home/sfoell/MTEC-IM-309/pub-gdu4dg/SimulationExperiments/experiment_4_digits/digits_5_classification.py > /local/home/sfoell/MTEC-IM-309/pub-gdu4dg/SimulationExperiments/experiment_4_digits/orth_000.log 2>&1 &
+'''
+
+'''
+nohup /local/home/pokanovic/miniconda3/envs/gdu4dg/bin/python3.8 -u /local/home/pokanovic/project2/SimulationExperiments/experiment_4_digits/digits_5_classification.py --run_all 0 --lambda_orth 0 --fine_tune False --run 0 > /local/home/pokanovic/project2/SimulationExperiments/experiment_4_digits/srip_orth_000.log 2>&1 &
+
 '''
 
 from Model.utils import decode_one_hot_vector
@@ -62,7 +67,7 @@ def init_gpu(gpu, memory):
 init_gpu(gpu=0, memory=6000)
 
 # File path to the location where the results are stored
-res_file_dir = "/local/home/sfoell/NeurIPS/results/test" # TODO: add this as a parsed argument
+res_file_dir = "/local/home/pokanovic/project2/results/frozen"
 SOURCE_SAMPLE_SIZE = 25000
 TARGET_SAMPLE_SIZE = 9000
 img_shape = (32, 32, 3)
@@ -420,7 +425,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                 save_dir_path = os.path.join(save_dir_path, save_dir_name)
                 create_dir_if_not_exists(save_dir_path)
 
-            if save_plot or save_file:
+            if save_plot or save_feature:
                 X_DATA = model.predict(x_target_te)
                 Y_DATA = decode_one_hot_vector(y_target_te)
 
@@ -468,8 +473,9 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                 file_name_eval = 'spec_' + method.upper() + "_FT" + '.csv'
                 eval_file_path = os.path.join(save_dir_path, file_name_eval)
                 eval_df.to_csv(eval_file_path)
+                # print("\n\nSPEC_FILE \n", eval_df)
 
-        os.remove(feature_extractor_filepath)
+        #os.remove(feature_extractor_filepath)
 
     tf.keras.backend.clear_session()
     return None
@@ -484,12 +490,12 @@ def run_experiment(experiment):
         pass
 
 
-def run_all_experiments(digits_data):
+def run_all_experiments(digits_data, args):
     for i in [4]:
         experiments = []
-        for experiment in itertools.product([None, 'cosine_similarity', 'MMD', 'projected'],
-                                            [['mnistm'], ['mnist'], ['syn'], ['svhn'], ['usps']],
-                                            [True], [1e-3], [1e-3]):
+        for experiment in itertools.product([args.method],
+                                            [[args.TARGET_DOMAIN]],
+                                            [True], [0, 1e-3, 1e-2, 1e-1], [0, 1e-3, 1e-2, 1e-1], [args.fine_tune]):
             experiments.append({
                 'data': digits_data,
                 'method': experiment[0],
@@ -497,9 +503,10 @@ def run_all_experiments(digits_data):
                 'TARGET_DOMAIN': experiment[1],
                 'lambda_sparse': experiment[3],
                 'lambda_OLS': experiment[4],
-                'lambda_orth': 1e-3,
+                'lambda_orth': 0,
                 'early_stopping': experiment[2],
-                'run': i
+                'run': i,
+                'fine_tune': experiment[5]
             })
 
         print(f'Running {len(experiments)} experiments')
@@ -510,10 +517,11 @@ def run_all_experiments(digits_data):
 
 if __name__ == "__main__":
     args = parser_args()
+    res_file_dir = args.res_file_dir + args.TARGET_DOMAIN + '_' + str(args.method) + '_' + 'ft' if args.fine_tune else 'e2e'
     # load data once
     digits_data = DigitsData()
     if args.run_all:
-        run_all_experiments(digits_data)
+        run_all_experiments(digits_data, args)
     else:
         experiment = {
             'data': digits_data,
@@ -522,9 +530,9 @@ if __name__ == "__main__":
             'TARGET_DOMAIN': [args.TARGET_DOMAIN],
             'lambda_sparse': args.lambda_sparse,
             'lambda_OLS': args.lambda_OLS,
-            'lambda_orth': 1e-3,
+            'lambda_orth': args.lambda_orth,
             'early_stopping': args.early_stopping,
-            'run': 4
+            'run': args.running
         }
         run_experiment(experiment)
 
