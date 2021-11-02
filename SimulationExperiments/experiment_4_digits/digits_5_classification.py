@@ -249,12 +249,13 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     )
 
     run_start = datetime.now()
-
-    hist = model.fit(x=x_source_tr, y=y_source_tr, epochs=num_epochs, verbose=2,
+    # model.load_weights('my_weights')
+    hist = model.fit(x=x_source_tr, y=y_source_tr, epochs=1, verbose=2,
                      batch_size=batch_size, shuffle=False,
                      validation_data=(x_val, y_val),
                      callbacks=callbacks,
                      )
+    # model.save_weights('my_weights')
     run_end = datetime.now()
 
     # model evaluation
@@ -306,6 +307,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         file_name_hist = 'history_' + method.upper() + '.csv'
         hist_file_path = os.path.join(save_dir_path, file_name_hist)
         hist_df.to_csv(hist_file_path)
+        hist_df.to_csv('srip_' + TARGET_DOMAIN[0] + '_' + method + '_' + str(fine_tune) + '_' + str(lambda_orth) + '_' + str(run) + '.csv')
 
         model_res = model.evaluate(x_target_te, y_target_te, verbose=2)
         metric_names = model.metrics_names
@@ -447,6 +449,8 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                 file_name_hist = 'history_' + method.upper() + "_FT" + '.csv'
                 hist_file_path = os.path.join(save_dir_path, file_name_hist)
                 hist_df.to_csv(hist_file_path)
+                hist_df.to_csv('sripsecond_' + TARGET_DOMAIN[0] + '_' + method + '_' + str(fine_tune) + '_' + str(lambda_orth) + '_' +
+                       str(run) + '.csv')
 
                 # prepare results
                 model_res = model.evaluate(x_target_te, y_target_te, verbose=2)
@@ -495,7 +499,7 @@ def run_all_experiments(digits_data, args):
         experiments = []
         for experiment in itertools.product([args.method],
                                             [[args.TARGET_DOMAIN]],
-                                            [True], [0, 1e-3, 1e-2, 1e-1], [0, 1e-3, 1e-2, 1e-1], [args.fine_tune]):
+                                            [True], [0, 1e-3, 1e-2, 1e-1], [0, 1e-3, 1e-2, 1e-1], [args.ft]):
             experiments.append({
                 'data': digits_data,
                 'method': experiment[0],
@@ -517,7 +521,7 @@ def run_all_experiments(digits_data, args):
 
 if __name__ == "__main__":
     args = parser_args()
-    res_file_dir = args.res_file_dir + args.TARGET_DOMAIN + '_' + str(args.method) + '_' + 'ft' if args.fine_tune else 'e2e'
+    res_file_dir = args.res_file_dir + args.TARGET_DOMAIN + '_' + str(args.method) + '_' + 'ft' if args.ft else 'e2e'
     # load data once
     digits_data = DigitsData()
     if args.run_all:
@@ -532,6 +536,7 @@ if __name__ == "__main__":
             'lambda_OLS': args.lambda_OLS,
             'lambda_orth': args.lambda_orth,
             'early_stopping': args.early_stopping,
+            'fine_tune': args.ft,
             'run': args.running
         }
         run_experiment(experiment)

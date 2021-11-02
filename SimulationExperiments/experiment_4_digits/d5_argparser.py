@@ -35,8 +35,8 @@ def parser_args():
                         default=True)
 
     parser.add_argument('--fine_tune',
-                        type=bool,
-                        default=True)
+                        type=str,
+                        default="True")
 
     parser.add_argument('--res_file_dir',
                         type=str,
@@ -46,8 +46,12 @@ def parser_args():
                         type=int,
                         default=0)
 
+    parser.add_argument('--ft',
+                        type=bool,
+                        default=True)
+
     args = parser.parse_args()
     if args.method == 'None':
         args.method = None
-    args.fine_tune = bool(args.fine_tune)
+    args.ft = True if args.fine_tune == "True" else False
     return args
