@@ -1,8 +1,8 @@
 import numpy as np
 import tensorflow as tf
 
-from ECG_utils.datareader import DataReader
-from ECG_utils.utils import load_weights
+from SimulationExperiments.experiment_ecgs.ECG_utils.datareader import DataReader
+from SimulationExperiments.experiment_ecgs.ECG_utils.utils import load_weights
 
 
 class WeightedCrossEntropyLoss(tf.keras.losses.Loss):

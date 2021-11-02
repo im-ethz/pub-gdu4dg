@@ -1,4 +1,4 @@
-from tensorflow.python.keras import Model
+from tensorflow.keras import Model
 from Model.DomainAdaptation.domain_adaptation_layer import DGLayer
 
 class DomainAdaptationModel(Model):
