@@ -18,6 +18,7 @@ if __name__ == '__main__':
     # feature_extractor = get_lenet_feature_extractor()
     feature_extractor = tf.keras.models.load_model('/local/home/pokanovic/project2/results/test/run_4/SOURCE_COMBINED/mnistm/SOURCE_ONLY_mnistm_3778/feature_extractor.h5.tmp')
     x = feature_extractor.predict(x)
+    print('Feature extraction finished')
     x = x.squeeze()
     Sum_of_squared_distances = []
     K = range(2, 10)
