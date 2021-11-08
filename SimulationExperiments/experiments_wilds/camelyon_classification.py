@@ -32,6 +32,7 @@ res_file_dir = "output"
 
 SOURCE_SAMPLE_SIZE = 25000
 TARGET_SAMPLE_SIZE = 9000
+width, height = 96, 96
 
 
 def get_lenet_feature_extractor():
@@ -54,11 +55,11 @@ def get_resnet(input_shape):
 
 
 class CamelyonClassification():
-    def __init__(self, data, method, timestamp, target_domain, train_generator, valid_generator, test_generator,
+    def __init__(self, method, timestamp, target_domain, train_generator, valid_generator, test_generator,
                  kernel=None, batch_norm=False, bias=False,
                  save_file=True, save_plot=False,
                  save_feature=True, batch_size=64, fine_tune=False, lr=0.001, activation=None,
-                 feature_extractor='LeNet'):
+                 feature_extractor='LeNet', run=0):
         super()
         self.train_generator = train_generator
         self.valid_generator = valid_generator
@@ -76,15 +77,14 @@ class CamelyonClassification():
         self.bias = bias
         self.fine_tune = fine_tune
         self.kernel = kernel
-        self.data = data
         self.batch_size = batch_size
+        self.run = run
 
         self.run_id = np.random.randint(0, 10000, 1)[0]
         self.save_dir_path = 'pathSaving'
         self.da_spec = self.create_da_spec()
-        self.optimizer = tf.keras.optimizers.SGD(lr) if self.da_spec[
-                                                            'use_optim'].lower() == "sgd" else tf.keras.optimizers.Adam(
-            lr)
+        self.optimizer = tf.keras.optimizers.SGD(lr) \
+            if self.da_spec['use_optim'].lower() == "sgd" else tf.keras.optimizers.Adam(lr)
 
         from_logits = self.activation != "softmax"
 
@@ -107,7 +107,7 @@ class CamelyonClassification():
     def save_evaluation_files(self, model, fine_tune=False):
         method = self.da_spec["similarity_measure"]
         num_epochs = self.da_spec["epochs_FT"] if fine_tune else self.da_spec["epochs"]
-        file_suffix = "_FT" if fine_tune else ""
+        file_suffix = "_FT" if fine_tune else "E2E"
         run_start = datetime.now()
 
         hist = model.fit(x=self.train_generator,
@@ -117,15 +117,15 @@ class CamelyonClassification():
                          callbacks=self.callback, )
         run_end = datetime.now()
         predictions = model.predict(self.test_generator)
-        file_name_pred = "pred_{}{}.csv".format(method.upper(), file_suffix)
+        file_name_pred = "pred_camelyon_{}_{}_{}.csv".format(method.upper(), file_suffix, self.run)
         pred_file_path = os.path.join(self.save_dir_path, file_name_pred)
-        np.save(pred_file_path, predictions)
+        # TODO np.save(pred_file_path, predictions), don't need it?
 
         if self.save_file:
             hist_df = pd.DataFrame(hist.history)
             duration = run_end - run_start
 
-            file_name_hist = "history_{}{}.csv".format(method.upper(), file_suffix)
+            file_name_hist = "history_camelyon_{}_{}_{}.csv".format(method.upper(), file_suffix, self.run)
             hist_file_path = os.path.join(self.save_dir_path, file_name_hist)
             hist_df.to_csv(hist_file_path)
 
@@ -134,24 +134,19 @@ class CamelyonClassification():
             metric_names = model.metrics_names
             eval_df = pd.DataFrame(model_res).transpose()
             eval_df.columns = metric_names
-
-            # print(compute_challenge_metric_custom(predictions, np.array(self.y_target_te)))
-            # eval_df["challenge_metric"] = compute_challenge_metric_custom(predictions, np.array(self.y_target_te))
-            # eval_df['source_domain'] = ",".join(self.target_domain)
-            # eval_df['target_domain'] = ",".join(self.source_domains)
-            eval_df = pd.concat([eval_df, pd.DataFrame.from_dict(self.da_spec)], axis=1)
+            eval_df = pd.concat([eval_df, pd.DataFrame.from_dict([self.da_spec])], axis=1)
             eval_df['duration'] = duration
             eval_df['run_id'] = self.run_id
             eval_df['trained_epochs'] = len(hist_df)
 
-            file_name_eval = "spec_{}{}.csv".format(method.upper(), file_suffix)
+            file_name_eval = "spec_camelyon_{}_{}_{}.csv".format(method.upper(), file_suffix, self.run)
             eval_file_path = os.path.join(self.save_dir_path, file_name_eval)
             eval_df.to_csv(eval_file_path)
 
             if self.save_feature:
                 df_file_path = os.path.join(self.save_dir_path,
-                                            "{}{}_feature_data.csv".format(method.upper(), file_suffix))
-                pred_df = pd.DataFrame(predictions, columns=["x_{}".format(i) for i in range(ECGData.NUM_CLASSES)])
+                                            "{}_{}_{}_feature_data_camelyon.csv".format(method.upper(), file_suffix, self.run))
+                pred_df = pd.DataFrame(predictions, columns=["x_{}".format(i) for i in range(1)])
                 pred_df.to_csv(df_file_path)
 
     def create_da_spec(self):
@@ -179,12 +174,12 @@ class CamelyonClassification():
         prediction_layer.add(
             DGLayer(domain_units=num_domains, N=domain_dim, softness_param=softness_param, units=1,
                     kernel=self.kernel, sigma=sigma, activation=self.activation, bias=self.bias,
-                    similarity_measure=similarity_measure))  # TODO: check orth_pen_method
+                    similarity_measure=similarity_measure, orth_reg_method=reg_method))  # TODO: check orth_pen_method
 
     def build_model(self, feature_extractor, prediction_layer, ):
         model = DomainAdaptationModel(feature_extractor=feature_extractor, prediction_layer=prediction_layer)
 
-        model.build(input_shape=(None, 448, 448, 3))
+        model.build(input_shape=(None, width, height, 3))
         model.feature_extractor.summary()
         model.prediction_layer.summary()
 
@@ -201,7 +196,7 @@ class CamelyonClassification():
             feature_extractor = get_lenet_feature_extractor()
         elif self.feature_extractor.lower() == 'resnet':
             print("ResNet")
-            feature_extractor = get_resnet((448, 448, 3))  # TODO: remove hard-coded references
+            feature_extractor = get_resnet((width, height, 3))  # TODO: remove hard-coded references
         else:
             raise ValueError('Feature extractor not possible')
 
