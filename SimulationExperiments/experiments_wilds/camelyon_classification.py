@@ -33,6 +33,7 @@ res_file_dir = "output"
 SOURCE_SAMPLE_SIZE = 25000
 TARGET_SAMPLE_SIZE = 9000
 width, height = 96, 96
+img_shape = (width, height, 3)
 
 
 def get_lenet_feature_extractor():
@@ -47,6 +48,37 @@ def get_lenet_feature_extractor():
         , Dense(100, activation="relu")
         , Dense(100, activation="relu")
     ], name='feature_extractor')
+    return feature_exctractor
+
+
+def get_domainnet_feature_extractor(dropout=0.5):
+    feature_exctractor = tf.keras.Sequential([
+        Conv2D(64, strides=(1, 1), kernel_size=(5, 5), padding="same", input_shape=img_shape)
+        , BatchNormalization()
+        , tf.keras.layers.ReLU()
+        , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
+
+        , Conv2D(64, strides=(1, 1), kernel_size=(5, 5), padding="same")
+        , BatchNormalization()
+        , tf.keras.layers.ReLU()
+        , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
+
+        , Conv2D(128, strides=(1, 1), kernel_size=(5, 5), padding="same")
+        , BatchNormalization()
+        , tf.keras.layers.ReLU()
+        , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
+
+        , Flatten()
+        , Dense(3072)
+        , BatchNormalization()
+        , tf.keras.layers.ReLU()
+        , Dropout(dropout)
+
+        , Dense(2048)
+        , BatchNormalization()
+        , tf.keras.layers.ReLU()
+    ], name='feature_extractor_domainnet_digits')
+
     return feature_exctractor
 
 
@@ -125,7 +157,7 @@ class CamelyonClassification():
             hist_df = pd.DataFrame(hist.history)
             duration = run_end - run_start
 
-            file_name_hist = "history_camelyon_{}_{}_{}.csv".format(method.upper(), file_suffix, self.run)
+            file_name_hist = "history_camelyon_{}_{}_{}_{}.csv".format(method.upper(), file_suffix, self.run, self.run_id)
             hist_file_path = os.path.join(self.save_dir_path, file_name_hist)
             hist_df.to_csv(hist_file_path)
 
@@ -138,14 +170,15 @@ class CamelyonClassification():
             eval_df['duration'] = duration
             eval_df['run_id'] = self.run_id
             eval_df['trained_epochs'] = len(hist_df)
+            print('RUN ID: ', self.run_id, '\n\n')
 
-            file_name_eval = "spec_camelyon_{}_{}_{}.csv".format(method.upper(), file_suffix, self.run)
+            file_name_eval = "spec_camelyon_{}_{}_{}_{}.csv".format(method.upper(), file_suffix, self.run, self.run_id)
             eval_file_path = os.path.join(self.save_dir_path, file_name_eval)
             eval_df.to_csv(eval_file_path)
 
             if self.save_feature:
                 df_file_path = os.path.join(self.save_dir_path,
-                                            "{}_{}_{}_feature_data_camelyon.csv".format(method.upper(), file_suffix, self.run))
+                                            "{}_{}_{}_{}_feature_data_camelyon.csv".format(method.upper(), file_suffix, self.run, self.run_id))
                 pred_df = pd.DataFrame(predictions, columns=["x_{}".format(i) for i in range(1)])
                 pred_df.to_csv(df_file_path)
 
@@ -154,7 +187,7 @@ class CamelyonClassification():
                         "domain_reg_param": 1e-3, "batch_size": self.batch_size, "epochs": 250, "epochs_FT": 250,
                         "dropout": 0.5, "patience": 10, "use_optim": "adam", "orth_reg": "SRIP",
                         "source_sample_size": SOURCE_SAMPLE_SIZE, "target_sample_size": TARGET_SAMPLE_SIZE,
-                        "architecture": "LeNet", "bias": self.bias, "similarity_measure": self.method, 'lr': self.lr,
+                        "architecture": self.feature_extractor, "bias": self.bias, "similarity_measure": self.method, 'lr': self.lr,
                         'batch_normalization': self.batch_norm,
                         "kernel": "custom" if self.kernel is not None else "single"}
 
@@ -197,6 +230,8 @@ class CamelyonClassification():
         elif self.feature_extractor.lower() == 'resnet':
             print("ResNet")
             feature_extractor = get_resnet((width, height, 3))  # TODO: remove hard-coded references
+        elif self.feature_extractor.lower() == 'domainnet':
+            feature_extractor = get_domainnet_feature_extractor()
         else:
             raise ValueError('Feature extractor not possible')
 

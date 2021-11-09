@@ -90,5 +90,5 @@ if __name__ == "__main__":
                            method=args.method, kernel=None, batch_norm=False, bias=False,
                            timestamp=timestamp, target_domain=None, save_file=True, save_plot=False,
                            save_feature=False, batch_size=batch_size, fine_tune=args.ft,
-                           feature_extractor='lenet', run=args.running
+                           feature_extractor='DomainNet', run=args.running
                            ).run_experiment()
