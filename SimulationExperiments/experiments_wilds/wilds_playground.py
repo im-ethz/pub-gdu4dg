@@ -14,13 +14,15 @@ import tensorflow as tf
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 tf.random.set_seed(1234)
+# gpus = tf.config.experimental.list_physical_devices('GPU')
+# tf.config.experimental.set_memory_growth(gpus[0], True)
 
-batch_size = 1024
+batch_size = 32
 
 def parser_args():
     parser = argparse.ArgumentParser(description='Digits 5 classification')
     parser.add_argument('--method',
-                        help='cosine_similarity, MMD, projected',
+                        help='cosine_similarity, MMD, projected, None',
                         type=str,
                         default='cosine_similarity')
 
@@ -64,19 +66,19 @@ def parser_args():
 
 
 def get_wilds_data():
-    dataset = get_dataset(dataset='camelyon17', download=True)
+    dataset = get_dataset(dataset='iwildcam', download=True)
 
-    train_data = dataset.get_subset('train', transform=transforms.Compose([transforms.ToTensor()]))
-    valid_data = dataset.get_subset('val', transform=transforms.Compose([transforms.ToTensor()]))
-    test_data = dataset.get_subset('test', transform=transforms.Compose([transforms.ToTensor()]))
+    train_data = dataset.get_subset('train', transform=transforms.Compose([transforms.Resize((448,448)), transforms.ToTensor()]))
+    valid_data = dataset.get_subset('val', transform=transforms.Compose([transforms.Resize((448,448)),transforms.ToTensor()]))
+    test_data = dataset.get_subset('test', transform=transforms.Compose([transforms.Resize((448,448)),transforms.ToTensor()]))
 
     train_loader = get_train_loader('standard', train_data, batch_size=batch_size)
     valid_loader = get_train_loader('standard', valid_data, batch_size=batch_size)
     test_loader = get_train_loader('standard', test_data, batch_size=batch_size)
 
-    return DataGenerator(train_loader, x_path='x_full_train.npy', y_path='y_full_train.npy', batch_size=batch_size), \
-           DataGenerator(valid_loader, x_path='x_full_valid.npy', y_path='y_full_valid.npy', batch_size=batch_size), \
-           DataGenerator(test_loader, save_file=False, batch_size=batch_size)
+    return DataGenerator(train_loader, save_file=False, batch_size=batch_size, load_files=False, one_hot=True), \
+           DataGenerator(valid_loader, save_file=False, batch_size=batch_size, load_files=False, one_hot=True), \
+           DataGenerator(test_loader, save_file=False, batch_size=batch_size, load_files=False, one_hot=True)
 
 
 if __name__ == "__main__":
@@ -84,11 +86,13 @@ if __name__ == "__main__":
     args = parser_args()
     train_generator, valid_generator, test_generator = get_wilds_data()
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+
     CamelyonClassification(train_generator=train_generator,
                            valid_generator=valid_generator,
                            test_generator=test_generator,
-                           method=args.method, kernel=None, batch_norm=False, bias=False,
+                           method=None, kernel=None, batch_norm=False, bias=False,
                            timestamp=timestamp, target_domain=None, save_file=True, save_plot=False,
-                           save_feature=False, batch_size=batch_size, fine_tune=args.ft,
-                           feature_extractor='DomainNet', run=args.running
+                           save_feature=False, batch_size=batch_size, fine_tune=True,
+                           feature_extractor='ResNet', run=args.running,
+                           only_fine_tune=True  # only for resnet
                            ).run_experiment()

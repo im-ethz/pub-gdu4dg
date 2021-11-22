@@ -4,10 +4,10 @@ import pathlib
 import sys
 import warnings
 from datetime import datetime
-
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+import tensorflow_addons as tfa
 from tensorflow.python.keras.callbacks import EarlyStopping
 from tensorflow.python.keras.layers import *
 
@@ -17,6 +17,8 @@ from Model.DomainAdaptation.domain_adaptation_layer import DGLayer
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 # silence_tensorflow()
 tf.random.set_seed(1234)
+# gpus = tf.config.experimental.list_physical_devices('GPU')
+# tf.config.experimental.set_memory_growth(gpus[0], True)
 
 logging.disable(logging.WARNING)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -32,8 +34,9 @@ res_file_dir = "output"
 
 SOURCE_SAMPLE_SIZE = 25000
 TARGET_SAMPLE_SIZE = 9000
-width, height = 96, 96
+width, height = 448, 448
 img_shape = (width, height, 3)
+units = 182
 
 
 def get_lenet_feature_extractor():
@@ -83,7 +86,17 @@ def get_domainnet_feature_extractor(dropout=0.5):
 
 
 def get_resnet(input_shape):
-    return tf.keras.applications.resnet50.ResNet50(include_top=False, weights=None, input_shape=input_shape)
+    resnet = tf.keras.applications.resnet50.ResNet50(include_top=False, weights='imagenet', input_shape=input_shape)
+    feature_extractor = tf.keras.Sequential([resnet,
+                                             Conv2D(8, (1, 1), activation='relu'),
+                                             Flatten()], name='feature_extractor_resnet')
+    return feature_extractor
+
+
+def get_dense_net():
+    return tf.keras.applications.densenet.DenseNet121(
+    include_top=False, weights='imagenet',
+    input_shape=img_shape, pooling='max')
 
 
 class CamelyonClassification():
@@ -91,7 +104,7 @@ class CamelyonClassification():
                  kernel=None, batch_norm=False, bias=False,
                  save_file=True, save_plot=False,
                  save_feature=True, batch_size=64, fine_tune=False, lr=0.001, activation=None,
-                 feature_extractor='LeNet', run=0):
+                 feature_extractor='LeNet', run=0, only_fine_tune=False):
         super()
         self.train_generator = train_generator
         self.valid_generator = valid_generator
@@ -111,6 +124,7 @@ class CamelyonClassification():
         self.kernel = kernel
         self.batch_size = batch_size
         self.run = run
+        self.only_fine_tune = only_fine_tune
 
         self.run_id = np.random.randint(0, 10000, 1)[0]
         self.save_dir_path = 'pathSaving'
@@ -120,12 +134,24 @@ class CamelyonClassification():
 
         from_logits = self.activation != "softmax"
 
-        self.loss = tf.keras.losses.BinaryCrossentropy()
-        self.metrics = [tf.keras.metrics.BinaryAccuracy(),
-                        # ChallengeMetric(),
-                        # WeightedCrossEntropy(pos_weight),
-                        # MultilableAccuracy(),
-                        tf.keras.metrics.BinaryCrossentropy(from_logits=from_logits)]
+        if units == 1:
+            self.loss = tf.keras.losses.BinaryCrossentropy()
+            self.metrics = [tf.keras.metrics.BinaryAccuracy(),
+                            # ChallengeMetric(),
+                            # WeightedCrossEntropy(pos_weight),
+                            # MultilableAccuracy(),
+                            tf.keras.metrics.BinaryCrossentropy(from_logits=from_logits),
+                            tfa.metrics.F1Score(num_classes=units, average='macro')
+                            ]
+        else:
+            self.loss = tf.keras.losses.CategoricalCrossentropy()
+            self.metrics = [tf.keras.metrics.CategoricalAccuracy(),
+                            # ChallengeMetric(),
+                            # WeightedCrossEntropy(pos_weight),
+                            # MultilableAccuracy(),
+                            tf.keras.metrics.CategoricalCrossentropy(from_logits=from_logits),
+                            tfa.metrics.F1Score(num_classes=units, average='macro')
+                            ]
 
         reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='loss', factor=0.2, patience=10, min_lr=0.0001)
         file_path = os.path.join(self.save_dir_path, 'best_model.hdf5')
@@ -174,6 +200,7 @@ class CamelyonClassification():
 
             file_name_eval = "spec_camelyon_{}_{}_{}_{}.csv".format(method.upper(), file_suffix, self.run, self.run_id)
             eval_file_path = os.path.join(self.save_dir_path, file_name_eval)
+            print('EVAL_DF\n\n', eval_df)
             eval_df.to_csv(eval_file_path)
 
             if self.save_feature:
@@ -205,7 +232,7 @@ class CamelyonClassification():
         reg_method = self.da_spec['reg_method']
         prediction_layer.add(BatchNormalization())
         prediction_layer.add(
-            DGLayer(domain_units=num_domains, N=domain_dim, softness_param=softness_param, units=1,
+            DGLayer(domain_units=num_domains, N=domain_dim, softness_param=softness_param, units=units,
                     kernel=self.kernel, sigma=sigma, activation=self.activation, bias=self.bias,
                     similarity_measure=similarity_measure, orth_reg_method=reg_method))  # TODO: check orth_pen_method
 
@@ -232,13 +259,15 @@ class CamelyonClassification():
             feature_extractor = get_resnet((width, height, 3))  # TODO: remove hard-coded references
         elif self.feature_extractor.lower() == 'domainnet':
             feature_extractor = get_domainnet_feature_extractor()
+        elif self.feature_extractor.lower() == 'densenet':
+            feature_extractor = get_dense_net()
         else:
             raise ValueError('Feature extractor not possible')
 
         # Define prediction layer
         prediction_layer = tf.keras.Sequential([], name='prediction_layer')
         if self.method == "SOURCE_ONLY":
-            prediction_layer.add(Dense(1))  # , activation=activation, use_bias=bias))
+            prediction_layer.add(Dense(units))  # , activation=activation, use_bias=bias))
         else:
             self.add_da_layer(prediction_layer)
 
@@ -248,24 +277,31 @@ class CamelyonClassification():
         model = self.build_model(feature_extractor, prediction_layer)
         print("\n\n\n BEGIN TRAIN:\t METHOD:{}\t\t\t target_domain: {}\n\n\n".format(self.method.upper(),
                                                                                      'camelyon'))
-        self.save_evaluation_files(model)
+        if not self.only_fine_tune:
+            self.save_evaluation_files(model)
 
         # Fine tuning, used only if no DA layer is used in previous stage
         if self.method == "SOURCE_ONLY" and self.fine_tune:
 
             feature_extractor_filepath = os.path.join(self.save_dir_path, 'feature_extractor.h5.tmp')
             feature_extractor.save(feature_extractor_filepath)
-
-            for method in ['cs', 'mmd', 'projected']:
-                feature_extractor = tf.keras.models.load_model(feature_extractor_filepath)
+            # feature_extractor = tf.keras.models.load_model(feature_extractor_filepath)
+            if self.feature_extractor.lower() == "resnet":
+                feature_extractor.layers[0].trainable = False
+            else:
                 feature_extractor.trainable = False
 
+            for method in ['cs', 'mmd', 'projected']:
+                # feature_extractor = tf.keras.models.load_model(feature_extractor_filepath)
+                # feature_extractor.trainable = False
+
                 self.da_spec["similarity_measure"] = method
+                prediction_layer = tf.keras.Sequential([], name='prediction_layer')  # TODO: not sure about this
                 self.add_da_layer(prediction_layer)
 
                 model = self.build_model(feature_extractor, prediction_layer)
 
-                print('\n BEGIN FINE TUNING:\t' + method.upper() + "\t" + self.target_domain[0] + "\n")
+                print('\n BEGIN FINE TUNING:\t' + method.upper() + "\t\n")
                 self.save_evaluation_files(model, fine_tune=True)
 
         tf.keras.backend.clear_session()
