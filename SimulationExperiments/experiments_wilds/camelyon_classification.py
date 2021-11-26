@@ -13,6 +13,7 @@ from tensorflow.python.keras.layers import *
 
 from Model.DomainAdaptation.DomainAdaptationModel import DomainAdaptationModel
 from Model.DomainAdaptation.domain_adaptation_layer import DGLayer
+import utils
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 # silence_tensorflow()
@@ -34,7 +35,10 @@ res_file_dir = "output"
 
 SOURCE_SAMPLE_SIZE = 25000
 TARGET_SAMPLE_SIZE = 9000
-width, height = 448, 448
+
+# IMPORTANT: check this before running
+# TODO: add to argument parser?
+width, height = 96, 96
 img_shape = (width, height, 3)
 units = 182
 
@@ -48,8 +52,8 @@ def get_lenet_feature_extractor():
         , BatchNormalization()
         , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
         , Flatten()
-        , Dense(100, activation="relu")
-        , Dense(100, activation="relu")
+        , Dense(100, activation="relu", kernel_initializer=utils.Ortho())
+        , Dense(100, activation="relu", kernel_initializer=utils.Ortho())
     ], name='feature_extractor')
     return feature_exctractor
 
@@ -88,7 +92,7 @@ def get_domainnet_feature_extractor(dropout=0.5):
 def get_resnet(input_shape):
     resnet = tf.keras.applications.resnet50.ResNet50(include_top=False, weights='imagenet', input_shape=input_shape)
     feature_extractor = tf.keras.Sequential([resnet,
-                                             Conv2D(8, (1, 1), activation='relu'),
+                                             Conv2D(8, (1, 1), activation='relu'), #401000 14x14x2048fg
                                              Flatten()], name='feature_extractor_resnet')
     return feature_extractor
 
@@ -105,6 +109,12 @@ class CamelyonClassification():
                  save_file=True, save_plot=False,
                  save_feature=True, batch_size=64, fine_tune=False, lr=0.001, activation=None,
                  feature_extractor='LeNet', run=0, only_fine_tune=False):
+        """"
+        Params:
+        ----------------------
+        only_fine_tune: 'bool'
+            if this parameter is set to True, the feature extractor will not be fine tuned
+        """
         super()
         self.train_generator = train_generator
         self.valid_generator = valid_generator
@@ -135,7 +145,7 @@ class CamelyonClassification():
         from_logits = self.activation != "softmax"
 
         if units == 1:
-            self.loss = tf.keras.losses.BinaryCrossentropy()
+            self.loss = tf.keras.losses.BinaryCrossentropy(from_logits=from_logits)
             self.metrics = [tf.keras.metrics.BinaryAccuracy(),
                             # ChallengeMetric(),
                             # WeightedCrossEntropy(pos_weight),
@@ -144,7 +154,7 @@ class CamelyonClassification():
                             tfa.metrics.F1Score(num_classes=units, average='macro')
                             ]
         else:
-            self.loss = tf.keras.losses.CategoricalCrossentropy()
+            self.loss = tf.keras.losses.CategoricalCrossentropy(from_logits=from_logits)
             self.metrics = [tf.keras.metrics.CategoricalAccuracy(),
                             # ChallengeMetric(),
                             # WeightedCrossEntropy(pos_weight),
@@ -160,7 +170,7 @@ class CamelyonClassification():
         self.callback = [EarlyStopping(patience=self.da_spec["patience"], restore_best_weights=True), reduce_lr,
                          model_checkpoint]
 
-        print("\n FINISHED LOADING CAMELYON")
+        print("\n FINISHED LOADING WILDS")
 
     def save_evaluation_files(self, model, fine_tune=False):
         method = self.da_spec["similarity_measure"]
@@ -234,7 +244,7 @@ class CamelyonClassification():
         prediction_layer.add(
             DGLayer(domain_units=num_domains, N=domain_dim, softness_param=softness_param, units=units,
                     kernel=self.kernel, sigma=sigma, activation=self.activation, bias=self.bias,
-                    similarity_measure=similarity_measure, orth_reg_method=reg_method))  # TODO: check orth_pen_method
+                    similarity_measure=similarity_measure, orth_reg_method=reg_method))
 
     def build_model(self, feature_extractor, prediction_layer, ):
         model = DomainAdaptationModel(feature_extractor=feature_extractor, prediction_layer=prediction_layer)
@@ -256,7 +266,7 @@ class CamelyonClassification():
             feature_extractor = get_lenet_feature_extractor()
         elif self.feature_extractor.lower() == 'resnet':
             print("ResNet")
-            feature_extractor = get_resnet((width, height, 3))  # TODO: remove hard-coded references
+            feature_extractor = get_resnet((width, height, 3))
         elif self.feature_extractor.lower() == 'domainnet':
             feature_extractor = get_domainnet_feature_extractor()
         elif self.feature_extractor.lower() == 'densenet':
@@ -267,7 +277,7 @@ class CamelyonClassification():
         # Define prediction layer
         prediction_layer = tf.keras.Sequential([], name='prediction_layer')
         if self.method == "SOURCE_ONLY":
-            prediction_layer.add(Dense(units))  # , activation=activation, use_bias=bias))
+            prediction_layer.add(Dense(units, activation=self.activation, use_bias=self.bias, kernel_initializer=utils.Ortho()))  # , activation=activation, use_bias=bias))
         else:
             self.add_da_layer(prediction_layer)
 

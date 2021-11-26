@@ -6,7 +6,24 @@ import camelyon_classification
 
 
 class DataGenerator(keras.utils.Sequence):
-    def __init__(self, data_loader, x_path=None, y_path=None, batch_size=32, save_file=True, load_files=True, one_hot=False):
+    def __init__(self, data_loader, x_path=None, y_path=None, batch_size=32, save_file=True, load_files=True,
+                 one_hot=False, return_weights=False):
+        """
+        :param data_loader: 'torch.DataLoader'
+        :param x_path: 'string'
+            specifies the location of the full numpy matrix for x values
+        :param y_path: 'string'
+            specifies the location of the full numpy matrix for x values
+        :param batch_size: 'int'
+        :param save_file: 'bool'
+            if set to True, it will try to save the entire numpy matrix
+        :param load_files: 'bool'
+            if set to True
+        :param one_hot: 'bool'
+            if set to True, y is returned as one_hot vector, necessary when there are more than 2 classes in the output
+        :param return_weights: 'bool'
+            if set to True weights are calculated to deal with class imbalance, inverse of the class frequency
+        """
         super(DataGenerator, self).__init__()
         self.data_loader = data_loader
         self.iterator = iter(data_loader)
@@ -15,9 +32,13 @@ class DataGenerator(keras.utils.Sequence):
         self.batch_size = batch_size
         self.x_full = None
         self.y_full = None
+        self.weights = None
         self.save_file = save_file
         self.load_files = load_files
         self.one_hot = one_hot
+        self.return_weights = return_weights
+        if self.return_weights:
+            self.weights = np.zeros(camelyon_classification.units)
         if self.load_files:
             self.load()
 
@@ -34,6 +55,8 @@ class DataGenerator(keras.utils.Sequence):
         else:
             for x, y, metadata in tqdm(self.data_loader):
                 y = y.numpy()
+                if self.return_weights:
+                    self.weights[y] += 1
                 if self.one_hot:
                     y = one_hot(y, camelyon_classification.units)
                 x = x.numpy()
@@ -56,6 +79,9 @@ class DataGenerator(keras.utils.Sequence):
                     print('Not enough space to save ', x_file_name, y_file_name)
             else:
                 print('Not saving files')
+
+            if self.return_weights:
+                self.weights = self.weights.sum() / self.weights
 
     def on_epoch_end(self):
         """Shuffle data at the end of every epoch"""
@@ -80,7 +106,15 @@ class DataGenerator(keras.utils.Sequence):
             x = x.numpy()
             B, C, W, H = x.shape
             x = x.reshape(B, W, H, C)
-        return x, y
+            if self.return_weights:
+                w = self.get_weights(y)
+                return x, y, w
+            else:
+                return x, y
+
+    def get_weights(self, y):
+        """y has to be one_hot encoding"""
+        return self.weights[np.argmax(y, axis=1)]
 
 
 def one_hot(x, depth):
