@@ -106,11 +106,11 @@ class DataGenerator(keras.utils.Sequence):
             x = x.numpy()
             B, C, W, H = x.shape
             x = x.reshape(B, W, H, C)
-            if self.return_weights:
-                w = self.get_weights(y)
-                return x, y, w
-            else:
-                return x, y
+        if self.return_weights:
+            w = self.get_weights(y)
+            return x, y, w
+        else:
+            return x, y
 
     def get_weights(self, y):
         """y has to be one_hot encoding"""
