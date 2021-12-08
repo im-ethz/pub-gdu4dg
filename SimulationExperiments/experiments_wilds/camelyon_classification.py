@@ -40,7 +40,7 @@ TARGET_SAMPLE_SIZE = 9000
 # TODO: add to argument parser?
 width, height = 96, 96
 img_shape = (width, height, 3)
-units = 182
+units = 1
 
 
 def get_lenet_feature_extractor():
@@ -108,7 +108,7 @@ class CamelyonClassification():
                  kernel=None, batch_norm=False, bias=False,
                  save_file=True, save_plot=False,
                  save_feature=True, batch_size=64, fine_tune=False, lr=0.001, activation=None,
-                 feature_extractor='LeNet', run=0, only_fine_tune=False):
+                 feature_extractor='LeNet', run=0, only_fine_tune=False, feature_extractor_saved_path=None):
         """"
         Params:
         ----------------------
@@ -135,6 +135,7 @@ class CamelyonClassification():
         self.batch_size = batch_size
         self.run = run
         self.only_fine_tune = only_fine_tune
+        self.feature_extractor_saved_path = feature_extractor_saved_path
 
         self.run_id = np.random.randint(0, 10000, 1)[0]
         self.save_dir_path = 'pathSaving'
@@ -147,18 +148,12 @@ class CamelyonClassification():
         if units == 1:
             self.loss = tf.keras.losses.BinaryCrossentropy(from_logits=from_logits)
             self.metrics = [tf.keras.metrics.BinaryAccuracy(),
-                            # ChallengeMetric(),
-                            # WeightedCrossEntropy(pos_weight),
-                            # MultilableAccuracy(),
                             tf.keras.metrics.BinaryCrossentropy(from_logits=from_logits),
                             tfa.metrics.F1Score(num_classes=units, average='macro')
                             ]
         else:
             self.loss = tf.keras.losses.CategoricalCrossentropy(from_logits=from_logits)
             self.metrics = [tf.keras.metrics.CategoricalAccuracy(),
-                            # ChallengeMetric(),
-                            # WeightedCrossEntropy(pos_weight),
-                            # MultilableAccuracy(),
                             tf.keras.metrics.CategoricalCrossentropy(from_logits=from_logits),
                             tfa.metrics.F1Score(num_classes=units, average='macro')
                             ]
@@ -179,10 +174,11 @@ class CamelyonClassification():
         run_start = datetime.now()
 
         hist = model.fit(x=self.train_generator,
-                         epochs=num_epochs,
+                         epochs=1,
                          verbose=1,
                          validation_data=self.valid_generator,
-                         callbacks=self.callback, )
+                         callbacks=self.callback,
+                         class_weight={k: v for k, v in enumerate(np.load('wildcam_weights.npy'))})
         run_end = datetime.now()
         predictions = model.predict(self.test_generator)
         file_name_pred = "pred_camelyon_{}_{}_{}.csv".format(method.upper(), file_suffix, self.run)
@@ -277,7 +273,7 @@ class CamelyonClassification():
         # Define prediction layer
         prediction_layer = tf.keras.Sequential([], name='prediction_layer')
         if self.method == "SOURCE_ONLY":
-            prediction_layer.add(Dense(units, activation=self.activation, use_bias=self.bias, kernel_initializer=utils.Ortho()))  # , activation=activation, use_bias=bias))
+            prediction_layer.add(Dense(units, activation=self.activation, use_bias=self.bias,))
         else:
             self.add_da_layer(prediction_layer)
 
@@ -293,9 +289,11 @@ class CamelyonClassification():
         # Fine tuning, used only if no DA layer is used in previous stage
         if self.method == "SOURCE_ONLY" and self.fine_tune:
 
-            feature_extractor_filepath = os.path.join(self.save_dir_path, 'feature_extractor.h5.tmp')
+            feature_extractor_filepath = os.path.join(self.save_dir_path + self.run_id, 'feature_extractor_best')
+            pathlib.Path(feature_extractor_filepath).mkdir(parents=True, exist_ok=True)
             feature_extractor.save(feature_extractor_filepath)
-            # feature_extractor = tf.keras.models.load_model(feature_extractor_filepath)
+            if self.feature_extractor_saved_path is not None:
+                feature_extractor = tf.keras.models.load_model(self.feature_extractor_saved_path)
             if self.feature_extractor.lower() == "resnet":
                 feature_extractor.layers[0].trainable = False
             else:
