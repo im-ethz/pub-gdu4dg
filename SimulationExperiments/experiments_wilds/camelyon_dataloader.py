@@ -7,7 +7,7 @@ import camelyon_classification
 
 class DataGenerator(keras.utils.Sequence):
     def __init__(self, data_loader, x_path=None, y_path=None, batch_size=32, save_file=True, load_files=True,
-                 one_hot=False, return_weights=False):
+                 one_hot=False, return_weights=False, weights_path=None):
         """
         :param data_loader: 'torch.DataLoader'
         :param x_path: 'string'
@@ -18,17 +18,20 @@ class DataGenerator(keras.utils.Sequence):
         :param save_file: 'bool'
             if set to True, it will try to save the entire numpy matrix
         :param load_files: 'bool'
-            if set to True
+            if set to True loads the data entirely into a numpy array
         :param one_hot: 'bool'
             if set to True, y is returned as one_hot vector, necessary when there are more than 2 classes in the output
         :param return_weights: 'bool'
             if set to True weights are calculated to deal with class imbalance, inverse of the class frequency
+        :param weights_path: 'string'
+            location of weights array for imbalanced datasets
         """
         super(DataGenerator, self).__init__()
         self.data_loader = data_loader
         self.iterator = iter(data_loader)
         self.x_path = x_path
         self.y_path = y_path
+        self.weights_path = weights_path
         self.batch_size = batch_size
         self.x_full = None
         self.y_full = None
@@ -38,7 +41,11 @@ class DataGenerator(keras.utils.Sequence):
         self.one_hot = one_hot
         self.return_weights = return_weights
         if self.return_weights:
-            self.weights = np.zeros(camelyon_classification.units)
+            if self.weights_path is not None:
+                self.weights = np.load(self.weights_path)
+            else:
+                self.weights = np.zeros(camelyon_classification.units)
+
         if self.load_files:
             self.load()
 
@@ -56,7 +63,8 @@ class DataGenerator(keras.utils.Sequence):
             for x, y, metadata in tqdm(self.data_loader):
                 y = y.numpy()
                 if self.return_weights:
-                    self.weights[y] += 1
+                    unique, counts = np.unique(y, return_counts=True)
+                    self.weights[unique] += counts
                 if self.one_hot:
                     y = one_hot(y, camelyon_classification.units)
                 x = x.numpy()
