@@ -59,6 +59,10 @@ def parser_args():
                         type=int,
                         default=5)
 
+    parser.add_argument('--fe_path',
+                        type=str,
+                        default='')
+
     args = parser.parse_args()
     if args.method == 'None':
         args.method = None
@@ -68,7 +72,7 @@ def parser_args():
 
 def get_wilds_data():
     # Specify the wilds dataset
-    dataset = get_dataset(dataset='iwildcam', download=True)
+    dataset = get_dataset(dataset='camelyon17', download=True)
 
     train_data = dataset.get_subset('train', transform=transforms.Compose([transforms.Resize((
         camelyon_classification.width, camelyon_classification.height)), transforms.ToTensor()]))
@@ -81,9 +85,9 @@ def get_wilds_data():
     valid_loader = get_train_loader('standard', valid_data, batch_size=batch_size)
     test_loader = get_train_loader('standard', test_data, batch_size=batch_size)
 
-    return DataGenerator(train_loader, save_file=False, batch_size=batch_size, one_hot=True, return_weights=True), \
-           DataGenerator(valid_loader, save_file=False, batch_size=batch_size, one_hot=True), \
-           DataGenerator(test_loader, save_file=False, batch_size=batch_size, one_hot=True)
+    return DataGenerator(train_loader, save_file=False, batch_size=batch_size, one_hot=False, return_weights=False, load_files=True,), \
+           DataGenerator(valid_loader, save_file=False, batch_size=batch_size, one_hot=False, load_files=True,), \
+           DataGenerator(test_loader, save_file=False, batch_size=batch_size, one_hot=False, load_files=True)
 
 
 if __name__ == "__main__":
@@ -99,5 +103,6 @@ if __name__ == "__main__":
                            timestamp=timestamp, target_domain=None, save_file=True, save_plot=False,
                            save_feature=False, batch_size=batch_size, fine_tune=True,
                            feature_extractor='DomainNet', run=args.running,
-                           only_fine_tune=False, activation='relu'  # only for resnet
+                           only_fine_tune=False, activation='relu',  # only for resnet
+                           feature_extractor_saved_path=args.fe_path
                            ).run_experiment()
