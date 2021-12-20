@@ -8,12 +8,10 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 import tensorflow_addons as tfa
-from tensorflow.python.keras.callbacks import EarlyStopping
 from tensorflow.python.keras.layers import *
+from tensorflow.python.keras.callbacks import EarlyStopping
 
-from Model.DomainAdaptation.DomainAdaptationModel import DomainAdaptationModel
 from Model.DomainAdaptation.domain_adaptation_layer import DGLayer
-import utils
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 # silence_tensorflow()
@@ -39,66 +37,9 @@ width, height = 448, 448
 img_shape = (width, height, 3)
 units = 182
 
-def get_lenet_feature_extractor():
-    feature_exctractor = tf.keras.Sequential([
-        Conv2D(32, kernel_size=(3, 3), activation='relu')
-        , BatchNormalization()
-        , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
-        , Conv2D(64, kernel_size=(2, 2), activation='relu')
-        , BatchNormalization()
-        , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
-        , Flatten()
-        , Dense(100, activation="relu") #, kernel_initializer=utils.Ortho())
-        , Dense(100, activation="relu") #, kernel_initializer=utils.Ortho())
-    ], name='feature_extractor')
-    return feature_exctractor
 
-
-def get_domainnet_feature_extractor(dropout=0.5):
-    feature_exctractor = tf.keras.Sequential([
-        Conv2D(64, strides=(1, 1), kernel_size=(5, 5), padding="same", input_shape=img_shape)
-        , BatchNormalization()
-        , tf.keras.layers.ReLU()
-        , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
-
-        , Conv2D(64, strides=(1, 1), kernel_size=(5, 5), padding="same")
-        , BatchNormalization()
-        , tf.keras.layers.ReLU()
-        , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
-
-        , Conv2D(128, strides=(1, 1), kernel_size=(5, 5), padding="same")
-        , BatchNormalization()
-        , tf.keras.layers.ReLU()
-        , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
-
-        , Flatten()
-        , Dense(3072)
-        , BatchNormalization()
-        , tf.keras.layers.ReLU()
-        , Dropout(dropout)
-
-        , Dense(2048)
-        , BatchNormalization()
-        , tf.keras.layers.ReLU()
-    ], name='feature_extractor_domainnet_digits')
-
-    return feature_exctractor
-
-
-def get_resnet(input_shape):
-    resnet = tf.keras.applications.resnet50.ResNet50(include_top=False, weights='imagenet', input_shape=input_shape)
-    feature_extractor = tf.keras.Sequential([resnet, tf.keras.layers.GlobalAveragePooling2D()], name='feature_extractor_resnet')
-    return feature_extractor
-
-
-def get_dense_net():
-    return tf.keras.applications.densenet.DenseNet121(
-    include_top=False, weights='imagenet',
-    input_shape=img_shape, pooling='max')
-
-
-class CamelyonClassification():
-    def __init__(self, method, timestamp, target_domain, train_generator, valid_generator, test_generator,
+class WildcamClassification():
+    def __init__(self, method, target_domain, train_generator, valid_generator, test_generator,
                  kernel=None, batch_norm=False, bias=False,
                  save_file=True, save_plot=False,
                  save_feature=True, batch_size=64, fine_tune=False, lr=0.001, activation=None,
@@ -139,15 +80,8 @@ class CamelyonClassification():
 
         from_logits = self.activation != "softmax"
 
-        if units == 1:
-            self.loss = tf.keras.losses.BinaryCrossentropy(from_logits=from_logits)
-            self.metrics = [tf.keras.metrics.BinaryAccuracy(),
-                            tf.keras.metrics.BinaryCrossentropy(from_logits=from_logits),
-                            tfa.metrics.F1Score(num_classes=units, average='macro')
-                            ]
-        else:
-            self.loss = tf.keras.losses.CategoricalCrossentropy(from_logits=from_logits)
-            self.metrics = [tf.keras.metrics.CategoricalAccuracy(),
+        self.loss = tf.keras.losses.CategoricalCrossentropy(from_logits=from_logits)
+        self.metrics = [tf.keras.metrics.CategoricalAccuracy(),
                             tf.keras.metrics.CategoricalCrossentropy(from_logits=from_logits),
                             tfa.metrics.F1Score(num_classes=units, average='macro')
                             ]
@@ -157,6 +91,7 @@ class CamelyonClassification():
         model_checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath=file_path, monitor='loss', save_best_only=True)
 
         self.callback = [EarlyStopping(patience=self.da_spec["patience"], restore_best_weights=True), reduce_lr, model_checkpoint]
+
 
         print("\n FINISHED LOADING WILDS")
 
@@ -235,71 +170,22 @@ class CamelyonClassification():
                     kernel=self.kernel, sigma=sigma, activation=self.activation, bias=self.bias,
                     similarity_measure=similarity_measure, orth_reg_method=reg_method))
 
-    def build_model(self, feature_extractor, prediction_layer, ):
-        model = DomainAdaptationModel(feature_extractor=feature_extractor, prediction_layer=prediction_layer)
-
-        model.build(input_shape=(None, width, height, 3))
-        model.feature_extractor.summary()
-        model.prediction_layer.summary()
-
-        model.compile(optimizer=self.optimizer, loss=self.loss, metrics=self.metrics, )
-        return model
-
     def run_experiment(self):
         # Create output folder
         pathlib.Path(self.save_dir_path).mkdir(parents=True, exist_ok=True)
 
-        # Define the feature extractor
-        if self.feature_extractor.lower() == 'lenet':
-            print("LeNet")
-            feature_extractor = get_lenet_feature_extractor()
-        elif self.feature_extractor.lower() == 'resnet':
-            print("ResNet")
-            feature_extractor = get_resnet((width, height, 3))
-        elif self.feature_extractor.lower() == 'domainnet':
-            print('domainNet')
-            feature_extractor = get_domainnet_feature_extractor()
-        elif self.feature_extractor.lower() == 'densenet':
-            feature_extractor = get_dense_net()
-        else:
-            raise ValueError('Feature extractor not possible')
-
-        # Define prediction layer
-        prediction_layer = tf.keras.Sequential([], name='prediction_layer')
-        if self.method == "SOURCE_ONLY":
-            prediction_layer.add(Dense(units, activation=self.activation, use_bias=self.bias,))
-        else:
-            self.add_da_layer(prediction_layer)
-
         # Initialize model
-        # DomainAdaptationModel has one feature_extractor (that may be used in the fine tune stage)
-        # and one prediction layer
-        model = self.build_model(feature_extractor, prediction_layer)
-        print("\n\n\n BEGIN TRAIN:\t METHOD:{}\t\t\t target_domain: {}\n\n\n".format(self.method.upper(),
-                                                                                     'camelyon'))
-        if not self.only_fine_tune:
-            self.save_evaluation_files(model)
+        for method in ['projected']:
+            self.da_spec["similarity_measure"] = method
+            model = tf.keras.Sequential([], name='prediction_layer')
+            model.add(Dense(units, activation=self.activation, use_bias=self.bias, ))
+            #self.add_da_layer(model)
+            model.build(input_shape=(None, 2048))
+            model.summary()
 
-        # Fine tuning, used only if no DA layer is used in previous stage
-        if self.method == "SOURCE_ONLY" and self.fine_tune:
+            model.compile(optimizer=self.optimizer, loss=self.loss, metrics=self.metrics, )
 
-            feature_extractor_filepath = os.path.join(self.save_dir_path + self.run_id, 'feature_extractor_best')
-            pathlib.Path(feature_extractor_filepath).mkdir(parents=True, exist_ok=True)
-            feature_extractor.save(feature_extractor_filepath)
-            if self.feature_extractor_saved_path is not None:
-                feature_extractor = tf.keras.models.load_model(self.feature_extractor_saved_path)
-            feature_extractor.trainable = False
-            for method in ['cs', 'mmd', 'projected']:
-                # feature_extractor = tf.keras.models.load_model(feature_extractor_filepath)
-                # feature_extractor.trainable = False
-
-                self.da_spec["similarity_measure"] = method
-                prediction_layer = tf.keras.Sequential([], name='prediction_layer')  # TODO: not sure about this
-                self.add_da_layer(prediction_layer)
-
-                model = self.build_model(feature_extractor, prediction_layer)
-
-                print('\n BEGIN FINE TUNING:\t' + method.upper() + "\t\n")
-                self.save_evaluation_files(model, fine_tune=True)
+            print('\n BEGIN FINE TUNING:\t' + method.upper() + "\t\n")
+            self.save_evaluation_files(model, fine_tune=True)
 
         tf.keras.backend.clear_session()

@@ -5,8 +5,8 @@ from sklearn.utils import shuffle
 import camelyon_classification
 
 
-class DataGenerator(keras.utils.Sequence):
-    def __init__(self, data_loader, x_path=None, y_path=None, batch_size=32, save_file=True, load_files=True,
+class WildcamDataGenerator(keras.utils.Sequence):
+    def __init__(self, data_loader, resnet, x_path=None, y_path=None, batch_size=32, save_file=True, load_files=True,
                  one_hot=False, return_weights=False, weights_path=None, leave_torch_shape=False):
         """
         :param data_loader: 'torch.DataLoader'
@@ -28,7 +28,7 @@ class DataGenerator(keras.utils.Sequence):
         :param leave_torch_shape: 'bool'
             if True returns torch shape as in the wilds dataloader
         """
-        super(DataGenerator, self).__init__()
+        super(WildcamDataGenerator, self).__init__()
         self.data_loader = data_loader
         self.iterator = iter(data_loader)
         self.x_path = x_path
@@ -43,14 +43,14 @@ class DataGenerator(keras.utils.Sequence):
         self.one_hot = one_hot
         self.return_weights = return_weights
         self.leave_torch_shape = leave_torch_shape
+        self.resnet = resnet
         if self.return_weights:
             if self.weights_path is not None:
                 self.weights = np.load(self.weights_path)
             else:
                 self.weights = np.zeros(camelyon_classification.units)
 
-        if self.load_files:
-            self.load()
+        self.load()
 
     def __len__(self):
         """Denotes the number of batches per epoch"""
@@ -70,9 +70,8 @@ class DataGenerator(keras.utils.Sequence):
                     self.weights[unique] += counts
                 if self.one_hot:
                     y = one_hot(y, camelyon_classification.units)
-                x = x.numpy()
-                B, C, W, H = x.shape
-                x = x.reshape(B, W, H, C)
+                x = self.resnet(x)
+                x = x.detach().numpy()
                 if self.x_full is None:
                     self.x_full = x
                     self.y_full = y
@@ -102,22 +101,9 @@ class DataGenerator(keras.utils.Sequence):
             pass
 
     def __getitem__(self, index):
-        if self.load_files:
-            x = self.x_full[index*self.batch_size:(index+1)*self.batch_size]
-            y = self.y_full[index*self.batch_size:(index+1)*self.batch_size]
-        else:
-            try:
-                x, y, metadata = next(self.iterator)
-            except StopIteration:
-                self.iterator = iter(self.data_loader)
-                x, y, metadata = next(self.iterator)
-            y = y.numpy()
-            if self.one_hot:
-                y = one_hot(y, camelyon_classification.units)
-            if not self.leave_torch_shape:
-                x = x.numpy()
-                B, C, W, H = x.shape
-                x = x.reshape(B, W, H, C)
+        x = self.x_full[index*self.batch_size:(index+1)*self.batch_size]
+        y = self.y_full[index*self.batch_size:(index+1)*self.batch_size]
+
         if self.return_weights:
             w = self.get_weights(y)
             return x, y, w

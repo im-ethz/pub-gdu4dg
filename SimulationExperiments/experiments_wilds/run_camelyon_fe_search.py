@@ -4,7 +4,8 @@ from wilds import get_dataset
 from wilds.common.data_loaders import get_train_loader
 import torchvision.transforms as transforms
 
-from SimulationExperiments.experiments_wilds.camelyon_classification import CamelyonClassification
+from SimulationExperiments.experiments_wilds import camelyon_classification_fe_search
+from SimulationExperiments.experiments_wilds.camelyon_classification_fe_search import CamelyonClassificationFESearch
 from SimulationExperiments.experiments_wilds.camelyon_dataloader import DataGenerator
 
 import warnings
@@ -12,19 +13,25 @@ from datetime import datetime
 
 import tensorflow as tf
 import camelyon_classification
+import tensorflow_addons as tfa
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 tf.random.set_seed(1234)
-# gpus = tf.config.experimental.list_physical_devices('GPU')
-# tf.config.experimental.set_memory_growth(gpus[0], True)
-from tensorflow.compat.v1 import ConfigProto
-from tensorflow.compat.v1 import InteractiveSession
+gpus = tf.config.experimental.list_physical_devices('GPU')
+tf.config.experimental.set_memory_growth(gpus[0], True)
+# from tensorflow.compat.v1 import ConfigProto
+# from tensorflow.compat.v1 import InteractiveSession
+#
+# config = ConfigProto()
+# config.gpu_options.allow_growth = True
+# session = InteractiveSession(config=config)
 
-config = ConfigProto()
-config.gpu_options.allow_growth = True
-session = InteractiveSession(config=config)
+batch_size = 1024
 
-batch_size = 16
+'''
+nohup /local/home/pokanovic/miniconda3/envs/gdu4dg/bin/python3.8 -u /local/home/pokanovic/project2/SimulationExperiments/experiments_wilds/run_camelyon_fe_search.py > /local/home/pokanovic/project2/SimulationExperiments/experiments_wilds/fe_search1.log 2>&1 &
+
+'''
 
 def parser_args():
     parser = argparse.ArgumentParser(description='Wilds classification')
@@ -78,25 +85,23 @@ def parser_args():
 
 def get_wilds_data():
     # Specify the wilds dataset
-    dataset = get_dataset(dataset='iwildcam', download=True)
+    dataset = get_dataset(dataset='camelyon17', download=True)
 
     train_data = dataset.get_subset('train', transform=transforms.Compose([transforms.Resize((
-        camelyon_classification.width, camelyon_classification.height)), transforms.ToTensor()]))
+        camelyon_classification_fe_search.width, camelyon_classification_fe_search.height)), transforms.ToTensor()]))
     valid_data = dataset.get_subset('val', transform=transforms.Compose([transforms.Resize((
-        camelyon_classification.width, camelyon_classification.height)), transforms.ToTensor()]))
+        camelyon_classification_fe_search.width, camelyon_classification_fe_search.height)), transforms.ToTensor()]))
     test_data = dataset.get_subset('test', transform=transforms.Compose([transforms.Resize((
-        camelyon_classification.width, camelyon_classification.height)), transforms.ToTensor()]))
+        camelyon_classification_fe_search.width, camelyon_classification_fe_search.height)), transforms.ToTensor()]))
 
     train_loader = get_train_loader('standard', train_data, batch_size=batch_size)
     valid_loader = get_train_loader('standard', valid_data, batch_size=batch_size)
     test_loader = get_train_loader('standard', test_data, batch_size=batch_size)
 
-    # return DataGenerator(train_loader, save_file=True, batch_size=batch_size), \
-    #       DataGenerator(valid_loader, save_file=True, batch_size=batch_size), \
-    #       DataGenerator(test_loader, save_file=False, batch_size=batch_size)
-    return DataGenerator(train_loader, batch_size=batch_size, one_hot=True, save_file=False, return_weights=False, load_files=False), \
-           DataGenerator(valid_loader, batch_size=batch_size, one_hot=True,  save_file=False, load_files=False), \
-           DataGenerator(test_loader, save_file=False, batch_size=batch_size, one_hot=True, load_files=False)
+    return DataGenerator(train_loader, x_path='x_full_train.npy', y_path='y_full_train.npy', batch_size=batch_size, ), \
+           DataGenerator(valid_loader, x_path='x_full_valid.npy', y_path='y_full_valid.npy', batch_size=batch_size, ), \
+           DataGenerator(test_loader, x_path='x_full_test.npy', y_path='y_full_test.npy', batch_size=batch_size, )
+
 
 if __name__ == "__main__":
     # load data once
@@ -104,13 +109,13 @@ if __name__ == "__main__":
     train_generator, valid_generator, test_generator = get_wilds_data()
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
-    CamelyonClassification(train_generator=train_generator,
+    CamelyonClassificationFESearch(train_generator=train_generator,
                            valid_generator=valid_generator,
                            test_generator=test_generator,
                            method=None, kernel=None, batch_norm=False, bias=False,
                            timestamp=timestamp, target_domain=None, save_file=True, save_plot=False,
                            save_feature=False, batch_size=batch_size, fine_tune=True,
-                           feature_extractor='ResNet', run=args.running,
-                           only_fine_tune=False, activation='softmax',  # only for resnet
+                           feature_extractor='DomainNet', run=args.running,
+                           only_fine_tune=False, activation='relu',  # only for resnet
                            feature_extractor_saved_path=args.fe_path
                            ).run_experiment()
