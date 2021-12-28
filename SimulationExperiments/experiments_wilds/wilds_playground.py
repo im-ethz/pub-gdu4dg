@@ -1,3 +1,16 @@
+# nohup /local/home/sfoell/anaconda3/envs/gdu4dg/bin/python3.8 -u /local/home/sfoell/MTEC-IM-309/pub-gdu4dg/SimulationExperiments/experiments_wilds/wilds_playground.py > /local/home/sfoell/MTEC-IM-309/pub-gdu4dg/SimulationExperiments/experiments_wilds/wilds_play.log 2>&1 &
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Find code directory relative to our directory
+abspath = os.path.abspath(__file__)
+os.chdir(os.path.dirname(abspath))
+
+sys.path.append(os.path.abspath(os.path.join(__file__, '../../..')))
+THIS_FILE = os.path.abspath(__file__)
+
+
 import argparse
 
 from wilds import get_dataset
@@ -20,11 +33,16 @@ tf.random.set_seed(1234)
 from tensorflow.compat.v1 import ConfigProto
 from tensorflow.compat.v1 import InteractiveSession
 
-config = ConfigProto()
-config.gpu_options.allow_growth = True
-session = InteractiveSession(config=config)
+gpus = tf.config.experimental.list_physical_devices('GPU')
+tf.config.experimental.set_visible_devices(gpus[1], 'GPU')
+tf.config.experimental.set_memory_growth(gpus[1], True)
 
-batch_size = 16
+#config = ConfigProto()
+#config.gpu_options.allow_growth = True
+#session = InteractiveSession(config=config)
+
+batch_size = 75
+
 
 def parser_args():
     parser = argparse.ArgumentParser(description='Wilds classification')
@@ -78,25 +96,27 @@ def parser_args():
 
 def get_wilds_data():
     # Specify the wilds dataset
-    dataset = get_dataset(dataset='iwildcam', download=True)
+    dataset = get_dataset(dataset='rxrx1', download=True)
 
-    train_data = dataset.get_subset('train', transform=transforms.Compose([transforms.Resize((
-        camelyon_classification.width, camelyon_classification.height)), transforms.ToTensor()]))
-    valid_data = dataset.get_subset('val', transform=transforms.Compose([transforms.Resize((
-        camelyon_classification.width, camelyon_classification.height)), transforms.ToTensor()]))
-    test_data = dataset.get_subset('test', transform=transforms.Compose([transforms.Resize((
-        camelyon_classification.width, camelyon_classification.height)), transforms.ToTensor()]))
+    #train_data = dataset.get_subset('train', transform=transforms.Compose([transforms.Resize((
+    #    camelyon_classification.width, camelyon_classification.height)), transforms.ToTensor()]))
+
+    train_data = dataset.get_subset('train', transform=transforms.Compose([transforms.ToTensor()]))
+    valid_data = dataset.get_subset('val', transform=transforms.Compose([transforms.ToTensor()]))
+    test_data = dataset.get_subset('test', transform=transforms.Compose([transforms.ToTensor()]))
 
     train_loader = get_train_loader('standard', train_data, batch_size=batch_size)
+    print(len(train_loader))
     valid_loader = get_train_loader('standard', valid_data, batch_size=batch_size)
     test_loader = get_train_loader('standard', test_data, batch_size=batch_size)
 
     # return DataGenerator(train_loader, save_file=True, batch_size=batch_size), \
     #       DataGenerator(valid_loader, save_file=True, batch_size=batch_size), \
     #       DataGenerator(test_loader, save_file=False, batch_size=batch_size)
-    return DataGenerator(train_loader, batch_size=batch_size, one_hot=True, save_file=False, return_weights=False, load_files=False), \
-           DataGenerator(valid_loader, batch_size=batch_size, one_hot=True,  save_file=False, load_files=False), \
-           DataGenerator(test_loader, save_file=False, batch_size=batch_size, one_hot=True, load_files=False)
+    return DataGenerator(train_loader, save_file=False, batch_size=batch_size, one_hot=True, return_weights=False), \
+           DataGenerator(valid_loader, save_file=False, batch_size=batch_size, one_hot=True), \
+           DataGenerator(test_loader, save_file=False, batch_size=batch_size, one_hot=True)
+
 
 if __name__ == "__main__":
     # load data once
@@ -110,7 +130,6 @@ if __name__ == "__main__":
                            method=None, kernel=None, batch_norm=False, bias=False,
                            timestamp=timestamp, target_domain=None, save_file=True, save_plot=False,
                            save_feature=False, batch_size=batch_size, fine_tune=True,
-                           feature_extractor='ResNet', run=args.running,
-                           only_fine_tune=False, activation='softmax',  # only for resnet
-                           feature_extractor_saved_path=args.fe_path
+                           feature_extractor='resnet', run=args.running,
+                           only_fine_tune=False, activation='softmax'  # only for resnet
                            ).run_experiment()

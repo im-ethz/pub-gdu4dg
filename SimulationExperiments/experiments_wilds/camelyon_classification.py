@@ -3,6 +3,10 @@ import os
 import pathlib
 import sys
 import warnings
+import tempfile
+import math
+import transformers
+
 from datetime import datetime
 import numpy as np
 import pandas as pd
@@ -15,11 +19,45 @@ from Model.DomainAdaptation.DomainAdaptationModel import DomainAdaptationModel
 from Model.DomainAdaptation.domain_adaptation_layer import DGLayer
 import utils
 
+
+class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
+    def __init__(self, initial_lr, warmup_steps, training_steps):
+        super(CustomSchedule, self).__init__()
+
+        self.initial_lr = initial_lr
+        self.warmup_steps = warmup_steps
+        self.training_steps = training_steps
+        self.first_step = True
+
+    def __call__(self, step):
+
+        #if self.first_step == True:
+        #    self.first_step = False
+        #    return self.initial_lr
+
+        if step < tf.constant([float(self.warmup_steps)]):
+            return self.initial_lr * float(step) / float(max(1, self.warmup_steps))
+        progress = float(step - self.warmup_steps) / float(max(1, self.training_steps - self.warmup_steps))
+        return self.initial_lr * max(0.0, 0.5 * (1.0 + math.cos(math.pi * progress)))
+
+
+#n_training_steps = math.ceil(len(train_loader)/config.gradient_accumulation_steps) * config.n_epochs
+n_epoch = 90
+gradient_accumulation_steps = 1
+n_training_steps = math.ceil(542/gradient_accumulation_steps) * n_epoch
+
+# probably, you can just hardcode this constant :)
+
+# Also, I believe they actually used intial lr 1e-3 and not 1e-4 as reported in the paper. And a batch size of 72. At least, that's what their config says.
+
+
+
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 # silence_tensorflow()
 tf.random.set_seed(1234)
-# gpus = tf.config.experimental.list_physical_devices('GPU')
-# tf.config.experimental.set_memory_growth(gpus[0], True)
+gpus = tf.config.experimental.list_physical_devices('GPU')
+tf.config.experimental.set_visible_devices(gpus[1], 'GPU')
+tf.config.experimental.set_memory_growth(gpus[1], True)
 
 logging.disable(logging.WARNING)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -35,9 +73,12 @@ res_file_dir = "output"
 
 SOURCE_SAMPLE_SIZE = 25000
 TARGET_SAMPLE_SIZE = 9000
-width, height = 448, 448
+
+# IMPORTANT: check this before running
+# TODO: add to argument parser?
+width, height = 256, 256
 img_shape = (width, height, 3)
-units = 182
+units = 1139
 
 def get_lenet_feature_extractor():
     feature_exctractor = tf.keras.Sequential([
@@ -48,8 +89,8 @@ def get_lenet_feature_extractor():
         , BatchNormalization()
         , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
         , Flatten()
-        , Dense(100, activation="relu") #, kernel_initializer=utils.Ortho())
-        , Dense(100, activation="relu") #, kernel_initializer=utils.Ortho())
+        , Dense(100, activation="relu")#, kernel_initializer=utils.Ortho())
+        , Dense(100, activation="relu")#, kernel_initializer=utils.Ortho())
     ], name='feature_extractor')
     return feature_exctractor
 
@@ -97,12 +138,37 @@ def get_dense_net():
     input_shape=img_shape, pooling='max')
 
 
+def add_regularization(model, regularizer=tf.keras.regularizers.l2(1e-5)):
+    if not isinstance(regularizer, tf.keras.regularizers.Regularizer):
+        print("Regularizer must be a subclass of tf.keras.regularizers.Regularizer")
+        return model
+
+    for layer in model.layers:
+        for attr in ['kernel_regularizer', 'bias_regularizer']:
+            if hasattr(layer, attr):
+                setattr(layer, attr, regularizer)
+
+    # When we change the layers attributes, the change only happens in the model config file
+    model_json = model.to_json()
+
+    # Save the weights before reloading the model.
+    tmp_weights_path = os.path.join(tempfile.gettempdir(), 'tmp_weights.h5')
+    model.save_weights(tmp_weights_path)
+
+    # load the model from the config
+    model = tf.keras.models.model_from_json(model_json)
+
+    # Reload the model weights
+    model.load_weights(tmp_weights_path, by_name=True)
+    return model
+
+
 class CamelyonClassification():
     def __init__(self, method, timestamp, target_domain, train_generator, valid_generator, test_generator,
                  kernel=None, batch_norm=False, bias=False,
                  save_file=True, save_plot=False,
-                 save_feature=True, batch_size=64, fine_tune=False, lr=0.001, activation=None,
-                 feature_extractor='LeNet', run=0, only_fine_tune=False, feature_extractor_saved_path=None):
+                 save_feature=True, batch_size=64, fine_tune=False, lr=1e-4, activation=None,
+                 feature_extractor='LeNet', run=0, only_fine_tune=False, feature_extractor_saved_path = None):
         """"
         Params:
         ----------------------
@@ -134,9 +200,11 @@ class CamelyonClassification():
         self.run_id = np.random.randint(0, 10000, 1)[0]
         self.save_dir_path = 'pathSaving'
         self.da_spec = self.create_da_spec()
-        self.optimizer = tf.keras.optimizers.SGD(lr) \
-            if self.da_spec['use_optim'].lower() == "sgd" else tf.keras.optimizers.Adam(lr)
-
+        self.optimizer = tfa.optimizers.extend_with_decoupled_weight_decay(tf.keras.optimizers.Adam)(learning_rate=CustomSchedule(initial_lr=1e-4, warmup_steps=5415, training_steps=n_training_steps), weight_decay=1e-4)
+            #tf.keras.optimizers.Adam(learning_rate=CustomSchedule(initial_lr=1e-4, warmup_steps=5415, training_steps=n_training_steps))
+        #self.optimizer = tf.keras.optimizers.SGD(lr) \
+        #    if self.da_spec['use_optim'].lower() == "sgd" else self.optimizer = tf.keras.optimizers.Adam(learning_rate=CustomSchedule(initial_lr=1e-3, warmup_steps=5415, training_steps=n_training_steps))
+            #tfa.optimizers.extend_with_decoupled_weight_decay(tf.keras.optimizers.Adam)(learning_rate=lr, weight_decay=1e-4)
         from_logits = self.activation != "softmax"
 
         if units == 1:
@@ -152,11 +220,11 @@ class CamelyonClassification():
                             tfa.metrics.F1Score(num_classes=units, average='macro')
                             ]
 
-        reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='loss', factor=0.2, patience=10, min_lr=0.0001)
+        #reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=10, min_lr=0.0001)
         file_path = os.path.join(self.save_dir_path, 'best_model.hdf5')
         model_checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath=file_path, monitor='loss', save_best_only=True)
 
-        self.callback = [EarlyStopping(patience=self.da_spec["patience"], restore_best_weights=True), reduce_lr, model_checkpoint]
+        self.callback = [EarlyStopping(patience=self.da_spec["patience"], restore_best_weights=True), model_checkpoint]
 
         print("\n FINISHED LOADING WILDS")
 
@@ -209,9 +277,9 @@ class CamelyonClassification():
                 pred_df.to_csv(df_file_path)
 
     def create_da_spec(self):
-        da_spec_dict = {"num_domains": 10, "domain_dim": 10, "sigma": 5.5, 'softness_param': 2,
+        da_spec_dict = {"num_domains": 7, "domain_dim": 10, "sigma": 7.5, 'softness_param': 2,
                         "domain_reg_param": 1e-3, "batch_size": self.batch_size, "epochs": 250, "epochs_FT": 250,
-                        "dropout": 0.5, "patience": 10, "use_optim": "adam", "orth_reg": "SRIP",
+                        "dropout": 0.5, "patience": 25, "use_optim": "adam", "orth_reg": "SRIP",
                         "source_sample_size": SOURCE_SAMPLE_SIZE, "target_sample_size": TARGET_SAMPLE_SIZE,
                         "architecture": self.feature_extractor, "bias": self.bias, "similarity_measure": self.method, 'lr': self.lr,
                         'batch_normalization': self.batch_norm,
@@ -242,7 +310,7 @@ class CamelyonClassification():
         model.feature_extractor.summary()
         model.prediction_layer.summary()
 
-        model.compile(optimizer=self.optimizer, loss=self.loss, metrics=self.metrics, )
+        model.compile(optimizer=self.optimizer, loss=self.loss, metrics=self.metrics)
         return model
 
     def run_experiment(self):
@@ -256,6 +324,7 @@ class CamelyonClassification():
         elif self.feature_extractor.lower() == 'resnet':
             print("ResNet")
             feature_extractor = get_resnet((width, height, 3))
+            #feature_extractor = add_regularization(feature_extractor)
         elif self.feature_extractor.lower() == 'domainnet':
             print('domainNet')
             feature_extractor = get_domainnet_feature_extractor()
@@ -267,7 +336,8 @@ class CamelyonClassification():
         # Define prediction layer
         prediction_layer = tf.keras.Sequential([], name='prediction_layer')
         if self.method == "SOURCE_ONLY":
-            prediction_layer.add(Dense(units, activation=self.activation, use_bias=self.bias,))
+            prediction_layer.add(Dense(units, activation=self.activation))
+            #, use_bias=self.bias)) #, kernel_initializer=utils.Ortho()))  # , activation=activation, use_bias=bias))
         else:
             self.add_da_layer(prediction_layer)
 
