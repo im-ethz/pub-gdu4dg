@@ -34,8 +34,9 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
         #if self.first_step == True:
         #    self.first_step = False
         #    return self.initial_lr
-
-        if step < tf.constant([float(self.warmup_steps)]):
+        if len(step.get_shape()) == 0:
+            return self.initial_lr
+        if step < self.warmup_steps:
             return self.initial_lr * float(step) / float(max(1, self.warmup_steps))
         progress = float(step - self.warmup_steps) / float(max(1, self.training_steps - self.warmup_steps))
         return self.initial_lr * max(0.0, 0.5 * (1.0 + math.cos(math.pi * progress)))
@@ -200,8 +201,8 @@ class CamelyonClassification():
         self.run_id = np.random.randint(0, 10000, 1)[0]
         self.save_dir_path = 'pathSaving'
         self.da_spec = self.create_da_spec()
-        self.optimizer = tfa.optimizers.extend_with_decoupled_weight_decay(tf.keras.optimizers.Adam)(learning_rate=CustomSchedule(initial_lr=1e-4, warmup_steps=5415, training_steps=n_training_steps), weight_decay=1e-4)
-            #tf.keras.optimizers.Adam(learning_rate=CustomSchedule(initial_lr=1e-4, warmup_steps=5415, training_steps=n_training_steps))
+        # self.optimizer = tfa.optimizers.extend_with_decoupled_weight_decay(tf.keras.optimizers.Adam)(learning_rate=CustomSchedule(initial_lr=1e-4, warmup_steps=5415, training_steps=n_training_steps), weight_decay=1e-4)
+        self.optimizer = tf.keras.optimizers.Adam(learning_rate=CustomSchedule(initial_lr=1e-4, warmup_steps=5415, training_steps=n_training_steps))
         #self.optimizer = tf.keras.optimizers.SGD(lr) \
         #    if self.da_spec['use_optim'].lower() == "sgd" else self.optimizer = tf.keras.optimizers.Adam(learning_rate=CustomSchedule(initial_lr=1e-3, warmup_steps=5415, training_steps=n_training_steps))
             #tfa.optimizers.extend_with_decoupled_weight_decay(tf.keras.optimizers.Adam)(learning_rate=lr, weight_decay=1e-4)
