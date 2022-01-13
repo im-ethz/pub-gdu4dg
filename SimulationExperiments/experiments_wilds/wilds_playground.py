@@ -12,30 +12,29 @@ THIS_FILE = os.path.abspath(__file__)
 
 
 import argparse
+import torch
 
 from wilds import get_dataset
 from wilds.common.data_loaders import get_train_loader
 import torchvision.transforms as transforms
+import torchvision.transforms.functional as TF
 
-from SimulationExperiments.experiments_wilds.camelyon_classification import CamelyonClassification
-from SimulationExperiments.experiments_wilds.camelyon_dataloader import DataGenerator
+from SimulationExperiments.experiments_wilds.camelyon.camelyon_classification import CamelyonClassification
+from SimulationExperiments.experiments_wilds.camelyon.camelyon_dataloader import DataGenerator
 
 import warnings
 from datetime import datetime
 
 import tensorflow as tf
-import camelyon_classification
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 tf.random.set_seed(1234)
 # gpus = tf.config.experimental.list_physical_devices('GPU')
 # tf.config.experimental.set_memory_growth(gpus[0], True)
-from tensorflow.compat.v1 import ConfigProto
-from tensorflow.compat.v1 import InteractiveSession
 
 gpus = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_visible_devices(gpus[1], 'GPU')
-tf.config.experimental.set_memory_growth(gpus[1], True)
+tf.config.experimental.set_visible_devices(gpus[2], 'GPU')
+tf.config.experimental.set_memory_growth(gpus[2], True)
 
 #config = ConfigProto()
 #config.gpu_options.allow_growth = True
@@ -101,12 +100,11 @@ def get_wilds_data():
     #train_data = dataset.get_subset('train', transform=transforms.Compose([transforms.Resize((
     #    camelyon_classification.width, camelyon_classification.height)), transforms.ToTensor()]))
 
-    train_data = dataset.get_subset('train', transform=transforms.Compose([transforms.ToTensor()]))
-    valid_data = dataset.get_subset('val', transform=transforms.Compose([transforms.ToTensor()]))
-    test_data = dataset.get_subset('test', transform=transforms.Compose([transforms.ToTensor()]))
+    train_data = dataset.get_subset('train', transform=initialize_rxrx1_transform(is_training=True))
+    valid_data = dataset.get_subset('val', transform=initialize_rxrx1_transform(is_training=False))
+    test_data = dataset.get_subset('test', transform=initialize_rxrx1_transform(is_training=False))
 
     train_loader = get_train_loader('standard', train_data, batch_size=batch_size)
-    print(len(train_loader))
     valid_loader = get_train_loader('standard', valid_data, batch_size=batch_size)
     test_loader = get_train_loader('standard', test_data, batch_size=batch_size)
 
@@ -117,6 +115,48 @@ def get_wilds_data():
            DataGenerator(valid_loader, save_file=False, batch_size=batch_size, one_hot=True), \
            DataGenerator(test_loader, save_file=False, batch_size=batch_size, one_hot=True)
 
+def initialize_rxrx1_transform(is_training):
+    transform_steps = []
+
+    _DEFAULT_IMAGE_TENSOR_NORMALIZATION_MEAN = [0.485, 0.456, 0.406]
+    _DEFAULT_IMAGE_TENSOR_NORMALIZATION_STD = [0.229, 0.224, 0.225]
+    default_normalization = transforms.Normalize(
+        _DEFAULT_IMAGE_TENSOR_NORMALIZATION_MEAN,
+        _DEFAULT_IMAGE_TENSOR_NORMALIZATION_STD,
+    )
+
+    def standardize(x: torch.Tensor) -> torch.Tensor:
+        mean = x.mean(dim=(1, 2))
+        std = x.std(dim=(1, 2))
+        std[std == 0.] = 1.
+        return TF.normalize(x, mean, std)
+    t_standardize = transforms.Lambda(lambda x: standardize(x))
+
+    angles = [0, 90, 180, 270]
+    def random_rotation(x: torch.Tensor) -> torch.Tensor:
+        angle = angles[torch.randint(low=0, high=len(angles), size=(1,))]
+        if angle > 0:
+            x = TF.rotate(x, angle)
+        return x
+    t_random_rotation = transforms.Lambda(lambda x: random_rotation(x))
+
+    if is_training:
+        transforms_ls = [
+            t_random_rotation,
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            t_standardize,
+        ]
+    else:
+        transforms_ls = [
+            transforms.ToTensor(),
+            t_standardize,
+        ]
+
+    transform_steps.append(default_normalization)
+    transform_steps.append(transforms_ls)
+    transform = transforms.Compose(transforms_ls)
+    return transform
 
 if __name__ == "__main__":
     # load data once
