@@ -18,9 +18,11 @@ import sys
 import warnings
 import tempfile
 import math
-import keras
+
 
 from datetime import datetime
+from tensorflow import keras
+
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -65,6 +67,81 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
 
         return lr
 
+class CosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
+  """A LearningRateSchedule that uses a cosine decay schedule.
+  See [Loshchilov & Hutter, ICLR2016](https://arxiv.org/abs/1608.03983),
+  SGDR: Stochastic Gradient Descent with Warm Restarts.
+  When training a model, it is often useful to lower the learning rate as
+  the training progresses. This schedule applies a cosine decay function
+  to an optimizer step, given a provided initial learning rate.
+  It requires a `step` value to compute the decayed learning rate. You can
+  just pass a TensorFlow variable that you increment at each training step.
+  The schedule a 1-arg callable that produces a decayed learning
+  rate when passed the current optimizer step. This can be useful for changing
+  the learning rate value across different invocations of optimizer functions.
+  It is computed as:
+  ```python
+  def decayed_learning_rate(step):
+    step = min(step, decay_steps)
+    cosine_decay = 0.5 * (1 + cos(pi * step / decay_steps))
+    decayed = (1 - alpha) * cosine_decay + alpha
+    return initial_learning_rate * decayed
+  ```
+  Example usage:
+  ```python
+  decay_steps = 1000
+  lr_decayed_fn = tf.keras.optimizers.schedules.CosineDecay(
+      initial_learning_rate, decay_steps)
+  ```
+  You can pass this schedule directly into a `tf.keras.optimizers.Optimizer`
+  as the learning rate. The learning rate schedule is also serializable and
+  deserializable using `tf.keras.optimizers.schedules.serialize` and
+  `tf.keras.optimizers.schedules.deserialize`.
+  Returns:
+    A 1-arg callable learning rate schedule that takes the current optimizer
+    step and outputs the decayed learning rate, a scalar `Tensor` of the same
+    type as `initial_learning_rate`.
+  """
+
+  def __init__(
+      self,
+      initial_learning_rate,
+      decay_steps,
+      alpha=0.0,
+      name=None):
+    """Applies cosine decay to the learning rate.
+    Args:
+      initial_learning_rate: A scalar `float32` or `float64` Tensor or a
+        Python number. The initial learning rate.
+      decay_steps: A scalar `int32` or `int64` `Tensor` or a Python number.
+        Number of steps to decay over.
+      alpha: A scalar `float32` or `float64` Tensor or a Python number.
+        Minimum learning rate value as a fraction of initial_learning_rate.
+      name: String. Optional name of the operation.  Defaults to 'CosineDecay'.
+    """
+    super(CosineDecay, self).__init__()
+
+    self.initial_learning_rate = initial_learning_rate
+    self.decay_steps = decay_steps
+    self.alpha = alpha
+    self.name = name
+
+  def __call__(self, step):
+    with tf.name_scope(self.name or "CosineDecay"):
+      initial_learning_rate = tf.convert_to_tensor(
+          self.initial_learning_rate, name="initial_learning_rate")
+      dtype = initial_learning_rate.dtype
+      decay_steps = tf.cast(self.decay_steps, dtype)
+
+      global_step_recomp = tf.cast(step, dtype)
+      global_step_recomp = tf.minimum(global_step_recomp, decay_steps)
+      completed_fraction = global_step_recomp / decay_steps
+      cosine_decayed = 0.5 * (1.0 + tf.cos(
+          tf.constant(math.pi, dtype=dtype) * completed_fraction))
+
+      decayed = (1 - self.alpha) * cosine_decayed + self.alpha
+      return tf.multiply(initial_learning_rate, decayed)
+
 
 
 
@@ -82,8 +159,8 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 # silence_tensorflow()
 tf.random.set_seed(1234)
 gpus = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_visible_devices(gpus[1], 'GPU')
-tf.config.experimental.set_memory_growth(gpus[1], True)
+tf.config.experimental.set_visible_devices(gpus[2], 'GPU')
+tf.config.experimental.set_memory_growth(gpus[2], True)
 
 logging.disable(logging.WARNING)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -223,10 +300,13 @@ class RXRX1Classification():
         self.feature_extractor_saved_path = feature_extractor_saved_path
 
         self.run_id = np.random.randint(0, 10000, 1)[0]
+        print(self.run_id)
         self.save_dir_path = 'pathSaving'
         self.da_spec = self.create_da_spec()
+        #self.optimizer = tf.keras.optimizers.Adam(learning_rate=CustomSchedule(initial_lr=0.001, warmup_steps=5415, training_steps=n_training_steps))
+        self.optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
         #self.optimizer = tfa.optimizers.extend_with_decoupled_weight_decay(tf.keras.optimizers.Adam)(learning_rate=CustomSchedule(initial_lr=1e-3,warmup_steps=5415,training_steps=n_training_steps),weight_decay=1e-4)
-        self.optimizer = tfa.optimizers.extend_with_decoupled_weight_decay(tf.keras.optimizers.Adam)(learning_rate=self.lr, weight_decay=1e-4)
+        #self.optimizer = tfa.optimizers.extend_with_decoupled_weight_decay(tf.keras.optimizers.Adam)(learning_rate=self.lr, weight_decay=1e-4)
         from_logits = self.activation != "softmax"
 
         if units == 1:
@@ -263,7 +343,7 @@ class RXRX1Classification():
                          epochs=num_epochs,
                          verbose=1,
                          validation_data=self.valid_generator,
-                         #callbacks=self.callback,
+                         callbacks=self.callback,
                          )
         run_end = datetime.now()
         predictions = model.predict(self.test_generator)
@@ -324,6 +404,7 @@ class RXRX1Classification():
         similarity_measure = self.da_spec["similarity_measure"]
         softness_param = self.da_spec["softness_param"]
         reg_method = self.da_spec['reg_method']
+        print(units)
         prediction_layer.add(BatchNormalization())
         prediction_layer.add(
             DGLayer(domain_units=num_domains, N=domain_dim, softness_param=softness_param, units=units,
@@ -353,8 +434,9 @@ class RXRX1Classification():
         print(n_epoch)
         gradient_accumulation_steps = 1
         n_training_steps = math.ceil(542 / gradient_accumulation_steps) * n_epoch
-        lr_decayed_fn = tf.keras.optimizers.schedules.CosineDecay(self.da_spec["lr"], n_training_steps)
-        optimizer = tf.keras.optimizers.Adam(lr=lr_decayed_fn)
+        #lr_decayed_fn = CosineDecay(self.da_spec["lr"], n_training_steps)
+        lr_decayed_fn = CustomSchedule(initial_lr=self.da_spec["lr"], warmup_steps=5415, training_steps=n_training_steps)
+        optimizer = tf.keras.optimizers.Adam(learning_rate=lr_decayed_fn)
 
         model.compile(optimizer=optimizer, loss=self.loss, metrics=self.metrics)
         return model

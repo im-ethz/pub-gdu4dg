@@ -10,12 +10,13 @@ os.chdir(os.path.dirname(abspath))
 sys.path.append(os.path.abspath(os.path.join(__file__, '../../..')))
 THIS_FILE = os.path.abspath(__file__)
 
-import keras
+
 import numpy as np
 from tqdm import tqdm
 from sklearn.utils import shuffle
 import rxrx1_classification
-
+from tensorflow import keras
+import tensorflow as tf
 
 class DataGenerator(keras.utils.Sequence):
     def __init__(self, data_loader, x_path=None, y_path=None, batch_size=32, save_file=True, load_files=False,
@@ -83,6 +84,7 @@ class DataGenerator(keras.utils.Sequence):
                 if self.one_hot:
                     y = one_hot(y, rxrx1_classification.units)
                 x = x.permute(0, 2, 3, 1).numpy()
+                x = tf.keras.applications.resnet.preprocess_input(x, data_format="channels_first")
                 #B, C, W, H = x.shape
                 #x = x.reshape(B, W, H, C)
                 if self.x_full is None:
@@ -128,6 +130,7 @@ class DataGenerator(keras.utils.Sequence):
                 y = one_hot(y, rxrx1_classification.units)
             if not self.leave_torch_shape:
                 x = x.permute(0, 2, 3, 1).numpy()
+                x = tf.keras.applications.resnet.preprocess_input(x, data_format="channels_first")
                 #B, C, W, H = x.shape
                 #x = x.reshape(B, W, H, C)
         if self.return_weights:

@@ -5,7 +5,7 @@ import sys
 import warnings
 from datetime import datetime
 
-import keras
+from tensorflow import keras
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -18,6 +18,9 @@ from tqdm import tqdm
 from wilds import get_dataset
 from wilds.common.data_loaders import get_train_loader
 from matplotlib import pyplot as plt
+import torchvision.transforms as transforms
+import torchvision.transforms.functional as TF
+
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 tf.random.set_seed(1234)
@@ -121,6 +124,7 @@ class DataGenerator(keras.utils.Sequence):
                 if self.one_hot:
                     y = one_hot(y, units)
                 x = x.permute(0, 2, 3, 1).numpy()
+                x = tf.keras.applications.resnet.preprocess_input(x, data_format="channels_first")
                 #B, C, W, H = x.shape
                 #x = x.reshape(B, W, H, C)
                 if self.x_full is None:
@@ -166,6 +170,7 @@ class DataGenerator(keras.utils.Sequence):
                 y = one_hot(y, units)
             if not self.leave_torch_shape:
                 x = x.permute(0, 2, 3, 1).numpy()
+                x = tf.keras.applications.resnet.preprocess_input(x, data_format="channels_first")
                 #B, C, W, H = x.shape
                 #x = x.reshape(B, W, H, C)
         if self.return_weights:
@@ -186,7 +191,7 @@ def one_hot(x, depth):
 
 
 def initialize_transform():
-    transform_steps = [transforms.Resize((448, 448))]
+    is_training = False
     _DEFAULT_IMAGE_TENSOR_NORMALIZATION_MEAN = [0.485, 0.456, 0.406]
     _DEFAULT_IMAGE_TENSOR_NORMALIZATION_STD = [0.229, 0.224, 0.225]
     default_normalization = transforms.Normalize(
@@ -194,9 +199,39 @@ def initialize_transform():
         _DEFAULT_IMAGE_TENSOR_NORMALIZATION_STD,
     )
 
-    transform_steps.append(transforms.ToTensor())
-    # transform_steps.append(default_normalization)
-    transform = transforms.Compose(transform_steps)
+    def standardize(x: torch.Tensor) -> torch.Tensor:
+        mean = x.mean(dim=(1, 2))
+        std = x.std(dim=(1, 2))
+        std[std == 0.] = 1.
+        return TF.normalize(x, mean, std)
+
+    t_standardize = transforms.Lambda(lambda x: standardize(x))
+
+    angles = [0, 90, 180, 270]
+
+    def random_rotation(x: torch.Tensor) -> torch.Tensor:
+        angle = angles[torch.randint(low=0, high=len(angles), size=(1,))]
+        if angle > 0:
+            x = TF.rotate(x, angle)
+        return x
+
+    t_random_rotation = transforms.Lambda(lambda x: random_rotation(x))
+
+    if is_training:
+        transforms_ls = [
+            t_random_rotation,
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            t_standardize,
+        ]
+    else:
+        transforms_ls = [
+            transforms.ToTensor(),
+            t_standardize,
+        ]
+
+    #transforms_ls.append(default_normalization)
+    transform = transforms.Compose(transforms_ls)
 
     return transform
 
@@ -219,6 +254,8 @@ if __name__ == "__main__":
     index = 0
 
     x_tf, y_tf = train_generator_tf.__getitem__(index)
+    x_tf = tf.keras.applications.resnet.preprocess_input(x_tf, data_format="channels_first")
+
     plt.imshow(x_tf.squeeze(), interpolation='nearest')
     plt.show()
 
