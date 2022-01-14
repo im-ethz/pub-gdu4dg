@@ -159,8 +159,8 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 # silence_tensorflow()
 tf.random.set_seed(1234)
 gpus = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_visible_devices(gpus[2], 'GPU')
-tf.config.experimental.set_memory_growth(gpus[2], True)
+tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
+tf.config.experimental.set_memory_growth(gpus[0], True)
 
 logging.disable(logging.WARNING)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -228,9 +228,8 @@ def get_domainnet_feature_extractor(dropout=0.5):
 
 
 def get_resnet(input_shape):
-    resnet = tf.keras.applications.resnet50.ResNet50(include_top=False, weights='imagenet', input_shape=input_shape)
-    feature_extractor = tf.keras.Sequential([resnet, tf.keras.layers.GlobalAveragePooling2D(), tf.keras.layers.Flatten()],
-                                            name='feature_extractor_resnet')
+    resnet = tf.keras.applications.resnet50.ResNet50(include_top=False, weights='imagenet', pooling = "avg", input_shape=input_shape)
+    feature_extractor = tf.keras.Sequential([resnet],name='feature_extractor_resnet')
     return feature_extractor
 
 
@@ -303,8 +302,8 @@ class RXRX1Classification():
         print(self.run_id)
         self.save_dir_path = 'pathSaving'
         self.da_spec = self.create_da_spec()
-        #self.optimizer = tf.keras.optimizers.Adam(learning_rate=CustomSchedule(initial_lr=0.001, warmup_steps=5415, training_steps=n_training_steps))
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
+        self.optimizer = tf.keras.optimizers.Adam(learning_rate=CustomSchedule(initial_lr=1e-3, warmup_steps=5415, training_steps=n_training_steps))
+        #self.optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
         #self.optimizer = tfa.optimizers.extend_with_decoupled_weight_decay(tf.keras.optimizers.Adam)(learning_rate=CustomSchedule(initial_lr=1e-3,warmup_steps=5415,training_steps=n_training_steps),weight_decay=1e-4)
         #self.optimizer = tfa.optimizers.extend_with_decoupled_weight_decay(tf.keras.optimizers.Adam)(learning_rate=self.lr, weight_decay=1e-4)
         from_logits = self.activation != "softmax"
@@ -434,8 +433,8 @@ class RXRX1Classification():
         print(n_epoch)
         gradient_accumulation_steps = 1
         n_training_steps = math.ceil(542 / gradient_accumulation_steps) * n_epoch
-        #lr_decayed_fn = CosineDecay(self.da_spec["lr"], n_training_steps)
-        lr_decayed_fn = CustomSchedule(initial_lr=self.da_spec["lr"], warmup_steps=5415, training_steps=n_training_steps)
+        lr_decayed_fn = CosineDecay(self.da_spec["lr"], n_training_steps)
+        #lr_decayed_fn = CustomSchedule(initial_lr=self.da_spec["lr"], warmup_steps=5415, training_steps=n_training_steps)
         optimizer = tf.keras.optimizers.Adam(learning_rate=lr_decayed_fn)
 
         model.compile(optimizer=optimizer, loss=self.loss, metrics=self.metrics)
