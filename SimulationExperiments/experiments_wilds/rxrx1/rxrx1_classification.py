@@ -45,24 +45,13 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
         self.first_step = True
 
     def __call__(self, step):
-
-        # if self.first_step == True:
-        #    self.first_step = False
-        #    return self.initial_lr
-
-        #if self.first_step == True:
-        #    self.first_step = False
-        #    return self.initial_lr
-        if len(step.get_shape()) == 0:
-            lr = self.initial_lr
-
-        elif step < self.warmup_steps:
-            lr = self.initial_lr * float(step) / float(max(1, self.warmup_steps))
-
-        else:
-            progress = float(step - self.warmup_steps) / float(max(1, self.training_steps - self.warmup_steps))
-            lr = self.initial_lr * max(0.0, 0.5 * (1.0 + math.cos(math.pi * progress)))
-
+        s = tf.cast(step, 'float32')
+        progress = (s - self.warmup_steps) / tf.maximum(1.0, self.training_steps - self.warmup_steps)
+            #lr = self.initial_lr * tf.maximum(0.0, 0.5 * (1.0 + tf.math.cos(tf.constant(math.pi) * progress)))
+        f1 = lambda: self.initial_lr * s / tf.maximum(1.0, self.warmup_steps)
+        f2 = lambda: self.initial_lr * tf.maximum(0.0, 0.5 * (1.0 + tf.math.cos(tf.constant(math.pi) * progress)))
+        lr = tf.case([(tf.less(s, self.warmup_steps), f1)], default=f2)
+        
         tf.summary.scalar('learning rate', data=lr, step=tf.cast(step, 'int8'))
 
         return lr
