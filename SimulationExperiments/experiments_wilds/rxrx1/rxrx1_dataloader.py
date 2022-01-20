@@ -84,7 +84,7 @@ class DataGenerator(keras.utils.Sequence):
                 if self.one_hot:
                     y = one_hot(y, rxrx1_classification.units)
                 x = x.permute(0, 2, 3, 1).numpy()
-                x = tf.keras.applications.resnet.preprocess_input(x, data_format="channels_first")
+                #x = tf.keras.applications.resnet.preprocess_input(x, data_format="channels_first")
                 #B, C, W, H = x.shape
                 #x = x.reshape(B, W, H, C)
                 if self.x_full is None:
@@ -130,7 +130,7 @@ class DataGenerator(keras.utils.Sequence):
                 y = one_hot(y, rxrx1_classification.units)
             if not self.leave_torch_shape:
                 x = x.permute(0, 2, 3, 1).numpy()
-                x = tf.keras.applications.resnet.preprocess_input(x, data_format="channels_first")
+                #x = tf.keras.applications.resnet.preprocess_input(x, data_format="channels_first")
                 #B, C, W, H = x.shape
                 #x = x.reshape(B, W, H, C)
         if self.return_weights:

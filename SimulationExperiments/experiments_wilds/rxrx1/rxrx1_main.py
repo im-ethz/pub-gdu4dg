@@ -36,19 +36,19 @@ import tensorflow as tf
 import numpy as np
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
-#tf.random.set_seed(1234)
+tf.random.set_seed(1234)
 # gpus = tf.config.experimental.list_physical_devices('GPU')
 # tf.config.experimental.set_memory_growth(gpus[0], True)
 
 gpus = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_visible_devices(gpus[2], 'GPU')
-tf.config.experimental.set_memory_growth(gpus[2], True)
+tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
+tf.config.experimental.set_memory_growth(gpus[0], True)
 
 #config = ConfigProto()
 #config.gpu_options.allow_growth = True
 #session = InteractiveSession(config=config)
 
-batch_size = 36
+batch_size = 75
 
 
 def parser_args():
@@ -137,7 +137,7 @@ def rxrx1_transform(is_training):
         ]
 
 
-    transforms_ls.append(default_normalization)
+    #transforms_ls.append(default_normalization)
     transform = transforms.Compose(transforms_ls)
     return transform
 
@@ -169,7 +169,7 @@ if __name__ == "__main__":
     RXRX1Classification(train_generator=train_generator,
                            valid_generator=valid_generator,
                            test_generator=test_generator,
-                           method=None, kernel=None, batch_norm=False, bias=False,
+                           method='cs', kernel=None, batch_norm=False, bias=False,
                            timestamp=timestamp, target_domain=None, save_file=True, save_plot=False,
                            save_feature=False, batch_size=batch_size, fine_tune=True,
                            feature_extractor='resnet', run=args.running,

@@ -56,88 +56,13 @@ class CustomSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
 
         return lr
 
-class CosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
-  """A LearningRateSchedule that uses a cosine decay schedule.
-  See [Loshchilov & Hutter, ICLR2016](https://arxiv.org/abs/1608.03983),
-  SGDR: Stochastic Gradient Descent with Warm Restarts.
-  When training a model, it is often useful to lower the learning rate as
-  the training progresses. This schedule applies a cosine decay function
-  to an optimizer step, given a provided initial learning rate.
-  It requires a `step` value to compute the decayed learning rate. You can
-  just pass a TensorFlow variable that you increment at each training step.
-  The schedule a 1-arg callable that produces a decayed learning
-  rate when passed the current optimizer step. This can be useful for changing
-  the learning rate value across different invocations of optimizer functions.
-  It is computed as:
-  ```python
-  def decayed_learning_rate(step):
-    step = min(step, decay_steps)
-    cosine_decay = 0.5 * (1 + cos(pi * step / decay_steps))
-    decayed = (1 - alpha) * cosine_decay + alpha
-    return initial_learning_rate * decayed
-  ```
-  Example usage:
-  ```python
-  decay_steps = 1000
-  lr_decayed_fn = tf.keras.optimizers.schedules.CosineDecay(
-      initial_learning_rate, decay_steps)
-  ```
-  You can pass this schedule directly into a `tf.keras.optimizers.Optimizer`
-  as the learning rate. The learning rate schedule is also serializable and
-  deserializable using `tf.keras.optimizers.schedules.serialize` and
-  `tf.keras.optimizers.schedules.deserialize`.
-  Returns:
-    A 1-arg callable learning rate schedule that takes the current optimizer
-    step and outputs the decayed learning rate, a scalar `Tensor` of the same
-    type as `initial_learning_rate`.
-  """
-
-  def __init__(
-      self,
-      initial_learning_rate,
-      decay_steps,
-      alpha=0.0,
-      name=None):
-    """Applies cosine decay to the learning rate.
-    Args:
-      initial_learning_rate: A scalar `float32` or `float64` Tensor or a
-        Python number. The initial learning rate.
-      decay_steps: A scalar `int32` or `int64` `Tensor` or a Python number.
-        Number of steps to decay over.
-      alpha: A scalar `float32` or `float64` Tensor or a Python number.
-        Minimum learning rate value as a fraction of initial_learning_rate.
-      name: String. Optional name of the operation.  Defaults to 'CosineDecay'.
-    """
-    super(CosineDecay, self).__init__()
-
-    self.initial_learning_rate = initial_learning_rate
-    self.decay_steps = decay_steps
-    self.alpha = alpha
-    self.name = name
-
-  def __call__(self, step):
-    with tf.name_scope(self.name or "CosineDecay"):
-      initial_learning_rate = tf.convert_to_tensor(
-          self.initial_learning_rate, name="initial_learning_rate")
-      dtype = initial_learning_rate.dtype
-      decay_steps = tf.cast(self.decay_steps, dtype)
-
-      global_step_recomp = tf.cast(step, dtype)
-      global_step_recomp = tf.minimum(global_step_recomp, decay_steps)
-      completed_fraction = global_step_recomp / decay_steps
-      cosine_decayed = 0.5 * (1.0 + tf.cos(
-          tf.constant(math.pi, dtype=dtype) * completed_fraction))
-
-      decayed = (1 - self.alpha) * cosine_decayed + self.alpha
-      return tf.multiply(initial_learning_rate, decayed)
-
 
 
 
 # n_training_steps = math.ceil(len(train_loader)/config.gradient_accumulation_steps) * config.n_epochs
-n_epoch = 90
+n_epoch = 120
 gradient_accumulation_steps = 1
-n_training_steps = math.ceil(542 / gradient_accumulation_steps) * n_epoch
+n_training_steps = math.ceil(542 / gradient_accumulation_steps) * n_epoch #542
 
 # probably, you can just hardcode this constant :)
 
@@ -146,7 +71,7 @@ n_training_steps = math.ceil(542 / gradient_accumulation_steps) * n_epoch
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 # silence_tensorflow()
-tf.random.set_seed(1234)
+tf.random.set_seed(2341)
 gpus = tf.config.experimental.list_physical_devices('GPU')
 tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
 tf.config.experimental.set_memory_growth(gpus[0], True)
@@ -217,8 +142,9 @@ def get_domainnet_feature_extractor(dropout=0.5):
 
 
 def get_resnet(input_shape):
-    resnet = tf.keras.applications.resnet50.ResNet50(include_top=False, weights='imagenet', pooling = "avg", input_shape=input_shape)
-    feature_extractor = tf.keras.Sequential([resnet],name='feature_extractor_resnet')
+    resnet = tf.keras.applications.resnet50.ResNet50(include_top=False, weights='imagenet',
+                                                     pooling="avg", input_shape=input_shape)
+    feature_extractor = tf.keras.Sequential([resnet], name='feature_extractor_resnet')
     return feature_extractor
 
 
@@ -291,10 +217,10 @@ class RXRX1Classification():
         print(self.run_id)
         self.save_dir_path = 'pathSaving'
         self.da_spec = self.create_da_spec()
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate=CustomSchedule(initial_lr=1e-3, warmup_steps=5415, training_steps=n_training_steps))
+        #self.optimizer = tf.keras.optimizers.Adam(learning_rate=CustomSchedule(initial_lr=1e-3, warmup_steps=12700, training_steps=n_training_steps))
         #self.optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
         #self.optimizer = tfa.optimizers.extend_with_decoupled_weight_decay(tf.keras.optimizers.Adam)(learning_rate=CustomSchedule(initial_lr=1e-3,warmup_steps=5415,training_steps=n_training_steps),weight_decay=1e-4)
-        #self.optimizer = tfa.optimizers.extend_with_decoupled_weight_decay(tf.keras.optimizers.Adam)(learning_rate=self.lr, weight_decay=1e-4)
+        self.optimizer = tfa.optimizers.AdamW(learning_rate=CustomSchedule(initial_lr=1e-3, warmup_steps= 5420, training_steps=n_training_steps), weight_decay=1e-5) #5420
         from_logits = self.activation != "softmax"
 
         if units == 1:
@@ -335,7 +261,7 @@ class RXRX1Classification():
                          )
         run_end = datetime.now()
         predictions = model.predict(self.test_generator)
-        file_name_pred = "pred_camelyon_{}_{}_{}.csv".format(method.upper(), file_suffix, self.run)
+        file_name_pred = "pred_rxrx1_{}_{}_{}.csv".format(method.upper(), file_suffix, self.run)
         pred_file_path = os.path.join(self.save_dir_path, file_name_pred)
         # TODO np.save(pred_file_path, predictions), don't need it?
 
@@ -343,7 +269,7 @@ class RXRX1Classification():
             hist_df = pd.DataFrame(hist.history)
             duration = run_end - run_start
 
-            file_name_hist = "history_camelyon_{}_{}_{}_{}.csv".format(method.upper(), file_suffix, self.run,
+            file_name_hist = "history_rxrx1_{}_{}_{}_{}.csv".format(method.upper(), file_suffix, self.run,
                                                                        self.run_id)
             hist_file_path = os.path.join(self.save_dir_path, file_name_hist)
             hist_df.to_csv(hist_file_path)
@@ -359,21 +285,21 @@ class RXRX1Classification():
             eval_df['trained_epochs'] = len(hist_df)
             print('RUN ID: ', self.run_id, '\n\n')
 
-            file_name_eval = "spec_camelyon_{}_{}_{}_{}.csv".format(method.upper(), file_suffix, self.run, self.run_id)
+            file_name_eval = "spec_rxrx1_{}_{}_{}_{}.csv".format(method.upper(), file_suffix, self.run, self.run_id)
             eval_file_path = os.path.join(self.save_dir_path, file_name_eval)
             print('EVAL_DF\n\n', eval_df)
             eval_df.to_csv(eval_file_path)
 
             if self.save_feature:
                 df_file_path = os.path.join(self.save_dir_path,
-                                            "{}_{}_{}_{}_feature_data_camelyon.csv".format(method.upper(), file_suffix,
+                                            "{}_{}_{}_{}_feature_data_rxrx1.csv".format(method.upper(), file_suffix,
                                                                                            self.run, self.run_id))
                 pred_df = pd.DataFrame(predictions, columns=["x_{}".format(i) for i in range(1)])
                 pred_df.to_csv(df_file_path)
 
     def create_da_spec(self):
-        da_spec_dict = {"num_domains": 6, "domain_dim": 10, "sigma": 12.5, 'softness_param': 2,
-                        "domain_reg_param": 1e-3, "batch_size": self.batch_size, "epochs": 90, "epochs_FT": 30,
+        da_spec_dict = {"num_domains": 6, "domain_dim": 10, "sigma": 7.5, 'softness_param': 2,
+                        "domain_reg_param": 1e-2, "batch_size": self.batch_size, "epochs": 120, "epochs_FT": 90,
                         "dropout": 0.5, "patience": 25, "use_optim": "adam", "orth_reg": "SRIP",
                         "architecture": self.feature_extractor, "bias": self.bias, "similarity_measure": self.method,
                         'lr': self.lr,
@@ -393,7 +319,7 @@ class RXRX1Classification():
         softness_param = self.da_spec["softness_param"]
         reg_method = self.da_spec['reg_method']
         print(units)
-        prediction_layer.add(BatchNormalization())
+        prediction_layer.add(tf.keras.layers.BatchNormalization())
         prediction_layer.add(
             DGLayer(domain_units=num_domains, N=domain_dim, softness_param=softness_param, units=units,
                     kernel=self.kernel, sigma=sigma, activation=self.activation, bias=self.bias,
@@ -418,13 +344,14 @@ class RXRX1Classification():
         model.prediction_layer.summary()
 
         n_epoch = self.da_spec["epochs_FT"] if self.method == "SOURCE_ONLY" and self.fine_tune else self.da_spec["epochs"]
-        print(self.da_spec["epochs_FT"])
-        print(n_epoch)
         gradient_accumulation_steps = 1
-        n_training_steps = math.ceil(542 / gradient_accumulation_steps) * n_epoch
-        lr_decayed_fn = CosineDecay(self.da_spec["lr"], n_training_steps)
-        #lr_decayed_fn = CustomSchedule(initial_lr=self.da_spec["lr"], warmup_steps=5415, training_steps=n_training_steps)
-        optimizer = tf.keras.optimizers.Adam(learning_rate=lr_decayed_fn)
+        n_training_steps = math.ceil(542 / gradient_accumulation_steps) * n_epoch #1270
+
+        lr_decayed_fn = CustomSchedule(initial_lr=1e-3, warmup_steps= 5420, training_steps=n_training_steps) #12700
+        #optimizer = tf.keras.optimizers.Adam(learning_rate=lr_decayed_fn)
+
+        optimizer = tfa.optimizers.AdamW(learning_rate=lr_decayed_fn, weight_decay=1e-5)
+
 
         model.compile(optimizer=optimizer, loss=self.loss, metrics=self.metrics)
         return model
@@ -464,7 +391,7 @@ class RXRX1Classification():
         # and one prediction layer
         #model = self.build_model(feature_extractor, prediction_layer)
         print("\n\n\n BEGIN TRAIN:\t METHOD:{}\t\t\t target_domain: {}\n\n\n".format(self.method.upper(),
-                                                                                     'camelyon'))
+                                                                                     'rxrx1'))
         if not self.only_fine_tune:
             self.save_evaluation_files(model)
 
