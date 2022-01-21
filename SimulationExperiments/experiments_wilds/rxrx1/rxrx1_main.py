@@ -57,12 +57,12 @@ def parser_args():
                         default='cosine_similarity')
 
     parser.add_argument('--lambda_sparse',
-                        default=1e-6,
+                        default=1e-4,
                         type=float)
 
     parser.add_argument('--lambda_OLS',
                         type=float,
-                        default=1e-4)
+                        default=1e-3)
 
     parser.add_argument('--lambda_orth',
                         type=float,
