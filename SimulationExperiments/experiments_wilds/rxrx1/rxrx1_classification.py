@@ -73,8 +73,8 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 # silence_tensorflow()
 tf.random.set_seed(2341)
 gpus = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
-tf.config.experimental.set_memory_growth(gpus[0], True)
+tf.config.experimental.set_visible_devices(gpus[1], 'GPU')
+tf.config.experimental.set_memory_growth(gpus[1], True)
 
 logging.disable(logging.WARNING)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -182,6 +182,8 @@ def add_regularization(model, regularizer=tf.keras.regularizers.l2(1e-5)):
 class RXRX1Classification():
     def __init__(self, method, timestamp, target_domain, train_generator, valid_generator, test_generator,
                  kernel=None, batch_norm=False, bias=False,
+                 lambda_OLS = 1e-3, lambda_orth = 1e-3, lambda_sparse= 1e-3,
+                 num_domains = 6, domain_dim = 10, sigma = 10,
                  save_file=True, save_plot=False,
                  save_feature=True, batch_size=64, fine_tune=False, lr=1e-3, activation=None,
                  feature_extractor='LeNet', run=0, only_fine_tune=False, feature_extractor_saved_path=None):
@@ -212,15 +214,21 @@ class RXRX1Classification():
         self.run = run
         self.only_fine_tune = only_fine_tune
         self.feature_extractor_saved_path = feature_extractor_saved_path
+        self.lambda_OLS = lambda_OLS
+        self.lambda_orth = lambda_orth
+        self.lambda_sparse = lambda_sparse
+        self.num_domains = num_domains
+        self.domain_dim = domain_dim
+        self.sigma = sigma
+        self.n_epoch = 90
+        self.gradient_accumulation_steps = 1
+        self.n_training_steps = math.ceil(542 / self.gradient_accumulation_steps) * self.n_epoch  # 542
 
         self.run_id = np.random.randint(0, 10000, 1)[0]
         print(self.run_id)
         self.save_dir_path = 'pathSaving'
         self.da_spec = self.create_da_spec()
-        #self.optimizer = tf.keras.optimizers.Adam(learning_rate=CustomSchedule(initial_lr=1e-3, warmup_steps=12700, training_steps=n_training_steps))
-        #self.optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
-        #self.optimizer = tfa.optimizers.extend_with_decoupled_weight_decay(tf.keras.optimizers.Adam)(learning_rate=CustomSchedule(initial_lr=1e-3,warmup_steps=5415,training_steps=n_training_steps),weight_decay=1e-4)
-        self.optimizer = tfa.optimizers.AdamW(learning_rate=CustomSchedule(initial_lr=1e-3, warmup_steps= 5420, training_steps=n_training_steps), weight_decay=1e-5) #5420
+        self.optimizer = tfa.optimizers.AdamW(learning_rate=CustomSchedule(initial_lr=1e-3, warmup_steps= 5420, training_steps=self.n_training_steps), weight_decay=1e-5) #5420
         from_logits = self.activation != "softmax"
 
         if units == 1:
@@ -236,20 +244,23 @@ class RXRX1Classification():
                             tfa.metrics.F1Score(num_classes=units, average='macro')
                             ]
 
-        # reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.2, patience=10, min_lr=0.0001)
-        # file_path = os.path.join(self.save_dir_path, 'best_model.hdf5')
-        # model_checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath=file_path, monitor='loss', save_best_only=True)
-        # self.callback = [EarlyStopping(patience=self.da_spec["patience"], restore_best_weights=True), model_checkpoint]
-
-        logdir = "logging_rxrx1_{}_{}".format("ERM" if method == None else method.upper(), self.run_id)
-        logdir = os.path.join(self.save_dir_path, logdir)
-        self.callback = [keras.callbacks.TensorBoard(log_dir=logdir)]
+        #logdir = "logging_rxrx1_{}_{}".format("ERM" if method == None else method.upper(), self.run_id)
+        #logdir = os.path.join(self.save_dir_path, logdir)
+        #self.callback = [keras.callbacks.TensorBoard(log_dir=logdir)]
 
         print("\n FINISHED LOADING WILDS")
 
     def save_evaluation_files(self, model, fine_tune=False):
         method = self.da_spec["similarity_measure"]
-        num_epochs = self.da_spec["epochs_FT"] if fine_tune else self.da_spec["epochs"]
+        if fine_tune:
+            num_epochs = self.da_spec["epochs_FT"]
+        elif fine_tune== False and self.method != "SOURCE_ONLY":
+            num_epochs = self.da_spec["epochs_E2E"]
+        else:
+            num_epochs = self.n_epoch
+
+        print(num_epochs)
+
         file_suffix = "_FT" if fine_tune else "E2E"
         run_start = datetime.now()
 
@@ -257,7 +268,7 @@ class RXRX1Classification():
                          epochs=num_epochs,
                          verbose=1,
                          validation_data=self.valid_generator,
-                         callbacks=self.callback,
+                         #callbacks=self.callback,
                          )
         run_end = datetime.now()
         predictions = model.predict(self.test_generator)
@@ -298,10 +309,21 @@ class RXRX1Classification():
                 pred_df.to_csv(df_file_path)
 
     def create_da_spec(self):
-        da_spec_dict = {"num_domains": 6, "domain_dim": 10, "sigma": 7.5, 'softness_param': 2,
-                        "domain_reg_param": 1e-2, "batch_size": self.batch_size, "epochs": 120, "epochs_FT": 90,
-                        "dropout": 0.5, "patience": 25, "use_optim": "adam", "orth_reg": "SRIP",
-                        "architecture": self.feature_extractor, "bias": self.bias, "similarity_measure": self.method,
+        da_spec_dict = {"num_domains": self.num_domains,
+                        "domain_dim": self.domain_dim,
+                        "sigma": self.sigma,
+                        'softness_param': 2,
+                        "batch_size": self.batch_size,
+                        "epochs_ERM": self.n_epoch,
+                        "epochs_E2E": 120,
+                        "epochs_FT": 90,
+                        "orth_reg": "SRIP",
+                        "architecture": self.feature_extractor,
+                        "bias": self.bias,
+                        "similarity_measure": self.method,
+                        'lambda_OLS': self.lambda_OLS,
+                        'lambda_orth': self.lambda_orth,
+                        'lambda_sparse': self.lambda_sparse,
                         'lr': self.lr,
                         'batch_normalization': self.batch_norm,
                         "kernel": "custom" if self.kernel is not None else "single"}
@@ -318,12 +340,17 @@ class RXRX1Classification():
         similarity_measure = self.da_spec["similarity_measure"]
         softness_param = self.da_spec["softness_param"]
         reg_method = self.da_spec['reg_method']
+        lambda_OLS = self.da_spec['lambda_OLS']
+        lambda_orth = self.da_spec['lambda_orth']
+        lambda_sparse = self.da_spec['lambda_sparse']
+
         print(units)
         prediction_layer.add(tf.keras.layers.BatchNormalization())
         prediction_layer.add(
             DGLayer(domain_units=num_domains, N=domain_dim, softness_param=softness_param, units=units,
                     kernel=self.kernel, sigma=sigma, activation=self.activation, bias=self.bias,
-                    similarity_measure=similarity_measure, orth_reg_method=reg_method))
+                    similarity_measure=similarity_measure, orth_reg_method=reg_method,
+                    lambda_OLS = lambda_OLS, lambda_orth = lambda_orth, lambda_sparse = lambda_sparse))
 
     def build_model(self, feature_extractor, prediction_layer, ):
         model = DomainAdaptationModel(feature_extractor=feature_extractor, prediction_layer=prediction_layer)
@@ -343,13 +370,11 @@ class RXRX1Classification():
         model.feature_extractor.summary()
         model.prediction_layer.summary()
 
-        n_epoch = self.da_spec["epochs_FT"] if self.method == "SOURCE_ONLY" and self.fine_tune else self.da_spec["epochs"]
+        n_epoch = self.da_spec["epochs_FT"] if self.method == "SOURCE_ONLY" and self.fine_tune else self.da_spec["epochs_E2E"]
         gradient_accumulation_steps = 1
         n_training_steps = math.ceil(542 / gradient_accumulation_steps) * n_epoch #1270
 
-        lr_decayed_fn = CustomSchedule(initial_lr=1e-3, warmup_steps= 5420, training_steps=n_training_steps) #12700
-        #optimizer = tf.keras.optimizers.Adam(learning_rate=lr_decayed_fn)
-
+        lr_decayed_fn = CustomSchedule(initial_lr=1e-3, warmup_steps= 5420, training_steps=n_training_steps)
         optimizer = tfa.optimizers.AdamW(learning_rate=lr_decayed_fn, weight_decay=1e-5)
 
 

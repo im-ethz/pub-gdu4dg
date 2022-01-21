@@ -37,16 +37,14 @@ import numpy as np
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 tf.random.set_seed(1234)
-# gpus = tf.config.experimental.list_physical_devices('GPU')
-# tf.config.experimental.set_memory_growth(gpus[0], True)
 
-gpus = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
-tf.config.experimental.set_memory_growth(gpus[0], True)
+#gpus = tf.config.experimental.list_physical_devices('GPU')
+#tf.config.experimental.set_visible_devices(gpus[1], 'GPU')
+#tf.config.experimental.set_memory_growth(gpus[1], True)
 
-#config = ConfigProto()
-#config.gpu_options.allow_growth = True
-#session = InteractiveSession(config=config)
+config = ConfigProto()
+config.gpu_options.allow_growth = True
+session = InteractiveSession(config=config)
 
 batch_size = 75
 
@@ -56,15 +54,15 @@ def parser_args():
     parser.add_argument('--method',
                         help='cosine_similarity, MMD, projected, None',
                         type=str,
-                        default='cosine_similarity')
+                        default=None)
 
     parser.add_argument('--lambda_sparse',
-                        default=1e-3,
+                        default=1e-6,
                         type=float)
 
     parser.add_argument('--lambda_OLS',
                         type=float,
-                        default=1e-3)
+                        default=1e-5)
 
     parser.add_argument('--lambda_orth',
                         type=float,
@@ -89,6 +87,14 @@ def parser_args():
     parser.add_argument('--num_domains',
                         type=int,
                         default=5)
+
+    parser.add_argument('--domain_dim',
+                        type=int,
+                        default=10)
+
+    parser.add_argument('--sigma',
+                        type=int,
+                        default=7.5)
 
     parser.add_argument('--fe_path',
                         type=str,
@@ -167,11 +173,18 @@ if __name__ == "__main__":
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
     RXRX1Classification(train_generator=train_generator,
-                           valid_generator=valid_generator,
-                           test_generator=test_generator,
-                           method='cs', kernel=None, batch_norm=False, bias=False,
-                           timestamp=timestamp, target_domain=None, save_file=True, save_plot=False,
-                           save_feature=False, batch_size=batch_size, fine_tune=True,
-                           feature_extractor='resnet', run=args.running,
-                           only_fine_tune=False, activation='softmax'  # only for resnet
-                           ).run_experiment()
+                        valid_generator=valid_generator,
+                        test_generator=test_generator,
+                        lambda_OLS=args.lambda_OLS,
+                        lambda_orth=args.lambda_orth,
+                        lambda_sparse=args.lambda_sparse,
+                        num_domains=args.num_domains,
+                        domain_dim=args.domain_dim,
+                        sigma=args.sigma,
+                        method=args.method,
+                        kernel=None, batch_norm=False, bias=False,
+                        timestamp=timestamp, target_domain=None, save_file=True, save_plot=False,
+                        save_feature=False, batch_size=batch_size, fine_tune=True,
+                        feature_extractor='resnet', run=args.running,
+                        only_fine_tune=False, activation='softmax'  # only for resnet
+                        ).run_experiment()
