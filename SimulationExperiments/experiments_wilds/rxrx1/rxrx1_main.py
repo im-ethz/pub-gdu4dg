@@ -54,7 +54,7 @@ def parser_args():
     parser.add_argument('--method',
                         help='cosine_similarity, MMD, projected, None',
                         type=str,
-                        default=None)
+                        default='cosine_similarity')
 
     parser.add_argument('--lambda_sparse',
                         default=1e-6,
@@ -62,7 +62,7 @@ def parser_args():
 
     parser.add_argument('--lambda_OLS',
                         type=float,
-                        default=1e-5)
+                        default=1e-4)
 
     parser.add_argument('--lambda_orth',
                         type=float,
