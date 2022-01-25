@@ -38,13 +38,13 @@ import numpy as np
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 tf.random.set_seed(1234)
 
-#gpus = tf.config.experimental.list_physical_devices('GPU')
-#tf.config.experimental.set_visible_devices(gpus[1], 'GPU')
-#tf.config.experimental.set_memory_growth(gpus[1], True)
+gpus = tf.config.experimental.list_physical_devices('GPU')
+tf.config.experimental.set_visible_devices(gpus[1], 'GPU')
+tf.config.experimental.set_memory_growth(gpus[1], True)
 
-config = ConfigProto()
-config.gpu_options.allow_growth = True
-session = InteractiveSession(config=config)
+#config = ConfigProto()
+#config.gpu_options.allow_growth = True
+#session = InteractiveSession(config=config)
 
 batch_size = 75
 
@@ -54,10 +54,10 @@ def parser_args():
     parser.add_argument('--method',
                         help='cosine_similarity, MMD, projected, None',
                         type=str,
-                        default='cosine_similarity')
+                        default='projected')
 
     parser.add_argument('--lambda_sparse',
-                        default=1e-4,
+                        default=0,
                         type=float)
 
     parser.add_argument('--lambda_OLS',
@@ -94,7 +94,7 @@ def parser_args():
 
     parser.add_argument('--sigma',
                         type=int,
-                        default=7.5)
+                        default=20)
 
     parser.add_argument('--fe_path',
                         type=str,
