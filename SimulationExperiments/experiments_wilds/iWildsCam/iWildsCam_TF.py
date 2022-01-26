@@ -473,9 +473,18 @@ class WildcamClassification():
                          #callbacks=self.callback,
                          )
         run_end = datetime.now()
+
+        #WILDS evaluation
         predictions = model.predict(self.test_generator)
         y_pred = torch.tensor(np.argmax(predictions, axis=1))
-        print(dataset.eval(y_pred, dataset.y_array, dataset.metadata_array))
+        test_data = dataset.get_subset('test', transform=initialize_transform())
+        dataset.eval(y_pred, test_data.y_array, test_data.metadata_array)
+        m = tf.keras.metrics.Accuracy()
+        m.update_state(test_data.y_array, y_pred)
+        print(m.result().numpy())
+
+        #Eval function by tensorflow
+        model.evaluate(self.test_generator, verbose=1)
 
         file_name_pred = "pred_camelyon_{}_{}_{}.csv".format(method.upper(), file_suffix, self.run)
         pred_file_path = os.path.join(self.save_dir_path, file_name_pred)
