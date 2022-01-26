@@ -24,8 +24,8 @@ from wilds.common.data_loaders import get_train_loader, get_eval_loader
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 # tf.random.set_seed(1234)
 gpus = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_visible_devices(gpus[1], 'GPU')
-tf.config.experimental.set_memory_growth(gpus[1], True)
+tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
+tf.config.experimental.set_memory_growth(gpus[0], True)
 
 #from tensorflow.compat.v1 import ConfigProto
 #from tensorflow.compat.v1 import InteractiveSession
@@ -305,16 +305,26 @@ class FMOWClassification():
         run_start = datetime.now()
 
         hist = model.fit(x=self.train_generator,
-                         epochs=num_epochs,
+                         epochs=1,#num_epochs,
                          verbose=1,
                          validation_data=self.valid_generator,
                          callbacks=self.callback,
                          )
         run_end = datetime.now()
+
+        #WILDS evaluation
         predictions = model.predict(self.test_generator)
         y_pred = torch.tensor(np.argmax(predictions, axis=1))
         test_data = dataset.get_subset('test', transform=initialize_transform())
-        #dataset.eval(y_pred, test_data.y_array, test_data.metadata_array)
+        dataset.eval(y_pred, test_data.y_array, test_data.metadata_array)
+        m = tf.keras.metrics.Accuracy()
+        m.update_state(test_data.y_array, y_pred)
+        print(m.result().numpy())
+
+        #Eval function by tensorflow
+        model.evaluate(self.test_generator, verbose=1)
+
+
 
         file_name_pred = "pred_camelyon_{}_{}_{}.csv".format(method.upper(), file_suffix, self.run)
 
