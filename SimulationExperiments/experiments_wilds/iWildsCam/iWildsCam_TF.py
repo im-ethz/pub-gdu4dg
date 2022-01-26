@@ -479,6 +479,8 @@ class WildcamClassification():
         y_pred = torch.tensor(np.argmax(predictions, axis=1))
         test_data = dataset.get_subset('test', transform=initialize_transform())
         dataset.eval(y_pred, test_data.y_array, test_data.metadata_array)
+
+        #Check if TF computes same scores based on y_pred and y_true
         m = tf.keras.metrics.Accuracy()
         m.update_state(test_data.y_array, y_pred)
         print(m.result().numpy())
