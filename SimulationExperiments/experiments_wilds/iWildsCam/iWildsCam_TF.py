@@ -640,7 +640,6 @@ def get_wilds_data():
 
     train_loader = get_train_loader('standard', train_data, batch_size=batch_size)
     valid_loader = get_train_loader('standard', valid_data, batch_size=batch_size) #n_groups_per_batch=2)
-    valid_loader = get_train_loader('standard', valid_data, batch_size=batch_size) #n_groups_per_batch=2)
     test_loader = get_eval_loader('standard', test_data, batch_size=batch_size)
 
     return DataGenerator(train_loader, batch_size=batch_size, one_hot=True, save_file=False, return_weights=False,
