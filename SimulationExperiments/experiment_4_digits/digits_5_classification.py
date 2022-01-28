@@ -92,9 +92,10 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                           fine_tune=True,
                           kernel=None,
                           data: DigitsData = None,
-                          run=None):
+                          run=None,
+                          num_domains=5):
     domain_adaptation_spec_dict = {
-        "num_domains": 5,
+        "num_domains": num_domains,
         "domain_dim": 10,
         "sigma": 7.5,
         'softness_param': 2,
@@ -510,7 +511,8 @@ def run_all_experiments(digits_data, args):
                 'lambda_orth': 0,
                 'early_stopping': experiment[2],
                 'run': i,
-                'fine_tune': experiment[5]
+                'fine_tune': experiment[5],
+                'num_domains': args.num_domains
             })
 
         print(f'Running {len(experiments)} experiments')
@@ -537,7 +539,8 @@ if __name__ == "__main__":
             'lambda_orth': args.lambda_orth,
             'early_stopping': args.early_stopping,
             'fine_tune': args.ft,
-            'run': args.running
+            'run': args.running,
+            'num_domains': args.num_domains
         }
         run_experiment(experiment)
 

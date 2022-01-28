@@ -50,6 +50,10 @@ def parser_args():
                         type=bool,
                         default=True)
 
+    parser.add_argument('--num_domains',
+                        type=int,
+                        default=5)
+
     args = parser.parse_args()
     if args.method == 'None':
         args.method = None
