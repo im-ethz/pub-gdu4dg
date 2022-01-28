@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 
-from ecg_config import Config
+from SimulationExperiments.experiment_ecgs.ecg_config import Config
 
 
 class MultilableAccuracy(tf.keras.metrics.MeanIoU):
