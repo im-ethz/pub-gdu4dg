@@ -10,7 +10,6 @@ os.chdir(os.path.dirname(abspath))
 sys.path.append(os.path.abspath(os.path.join(__file__, '../../../..')))
 THIS_FILE = os.path.abspath(__file__)
 
-
 import argparse
 import torch
 import copy

@@ -6,6 +6,15 @@ import sys
 import warnings
 from datetime import datetime
 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Find code directory relative to our directory
+abspath = os.path.abspath(__file__)
+os.chdir(os.path.dirname(abspath))
+
+sys.path.append(os.path.abspath(os.path.join(__file__, '../../../..')))
+THIS_FILE = os.path.abspath(__file__)
+
 import keras
 import numpy as np
 import pandas as pd
@@ -23,16 +32,19 @@ from wilds.common.data_loaders import get_train_loader, get_eval_loader
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 # tf.random.set_seed(1234)
+# gpus = tf.config.experimental.list_physical_devices('GPU')
+# tf.config.experimental.set_memory_growth(gpus[0], True)
+
 gpus = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
-tf.config.experimental.set_memory_growth(gpus[0], True)
+tf.config.experimental.set_visible_devices(gpus[1], 'GPU')
+tf.config.experimental.set_memory_growth(gpus[1], True)
 
-#from tensorflow.compat.v1 import ConfigProto
-#from tensorflow.compat.v1 import InteractiveSession
-
-#config = ConfigProto()
-#config.gpu_options.allow_growth = True
-#session = InteractiveSession(config=config)
+# from tensorflow.compat.v1 import ConfigProto
+# from tensorflow.compat.v1 import InteractiveSession
+#
+# config = ConfigProto()
+# config.gpu_options.allow_growth = True
+# session = InteractiveSession(config=config)
 
 batch_size = 64
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -133,8 +145,8 @@ class DataGenerator(tf.keras.utils.Sequence):
                 if self.one_hot:
                     y = one_hot(y, units)
                 x = x.permute(0, 2, 3, 1).numpy()
-                #B, C, W, H = x.shape
-                #x = x.reshape(B, W, H, C)
+                # B, C, W, H = x.shape
+                # x = x.reshape(B, W, H, C)
                 if self.x_full is None:
                     self.x_full = x
                     self.y_full = y
@@ -178,8 +190,8 @@ class DataGenerator(tf.keras.utils.Sequence):
                 y = one_hot(y, units)
             if not self.leave_torch_shape:
                 x = x.permute(0, 2, 3, 1).numpy()
-                #B, C, W, H = x.shape
-                #x = x.reshape(B, W, H, C)
+                # B, C, W, H = x.shape
+                # x = x.reshape(B, W, H, C)
         if self.return_weights:
             w = self.get_weights(y)
             return x, y, w
@@ -230,13 +242,12 @@ def get_domainnet_feature_extractor(dropout=0.5):
 
 def get_dense_net():
     return tf.keras.applications.densenet.DenseNet121(
-    include_top=False, weights='imagenet',
-    input_shape=img_shape, pooling='avg')
+        include_top=False, weights='imagenet',
+        input_shape=img_shape, pooling='avg')
 
 
 def scheduler(epoch, lr):
     return lr * 0.96 * tf.math.exp(0.0)
-
 
 
 class FMOWClassification():
@@ -289,12 +300,11 @@ class FMOWClassification():
                         ]
 
         # reduce_lr = tf.keras.callbacks.ReduceLROnPlateau(monitor='loss', factor=0.2, patience=10, min_lr=0.0001)
-
-        #file_path = '/local/home/pokanovic/project2/SimulationExperiments/experiments_wilds/pathSaving/model' + str(self.run_id)
-        #model_checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath=file_path, monitor='loss', save_best_only=True)
+        #file_path = '/cluster/project/jbuhmann/alinadu/gdu_wildcam/SimulationExperiments/experiments_wilds/pathSaving/model' + str(self.run_id)
+        # model_checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath=file_path, monitor='loss', save_best_only=True)
         #pathlib.Path(file_path).mkdir(parents=True, exist_ok=True)
         #model_checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath=file_path, monitor='loss', save_best_only=True)
-        self.callback = [EarlyStopping(patience=10, restore_best_weights=True), tf.keras.callbacks.LearningRateScheduler(scheduler)]
+        self.callback = [EarlyStopping(patience=10, restore_best_weights=True),tf.keras.callbacks.LearningRateScheduler(scheduler)]#, model_checkpoint]
 
         print("\n FINISHED LOADING WILDS")
 
@@ -305,32 +315,27 @@ class FMOWClassification():
         run_start = datetime.now()
 
         hist = model.fit(x=self.train_generator,
-                         epochs=1,#num_epochs,
+                         epochs=num_epochs,
                          verbose=1,
                          validation_data=self.valid_generator,
                          callbacks=self.callback,
                          )
         run_end = datetime.now()
-
-        #WILDS evaluation
+        # save model
+        # path = os.path.join(self.save_dir_path + '_fmow_model',
+        #                     str(self.fine_tune) + str(self.run) + str(self.ftmet))
+        # pathlib.Path(path).mkdir(parents=True, exist_ok=True)
+        # model.save(path)
         predictions = model.predict(self.test_generator)
         y_pred = torch.tensor(np.argmax(predictions, axis=1))
-        test_data = dataset.get_subset('test', transform=initialize_transform())
-        dataset.eval(y_pred, test_data.y_array, test_data.metadata_array)
-        m = tf.keras.metrics.Accuracy()
-        m.update_state(test_data.y_array, y_pred)
-        print(m.result().numpy())
-
-        #Eval function by tensorflow
-        model.evaluate(self.test_generator, verbose=1)
-
-
-
+        # test_data = dataset.get_subset('test', transform=initialize_transform())
+        # dataset.eval(y_pred, test_data.y_array, test_data.metadata_array)
+        self.eval(model)
         file_name_pred = "pred_camelyon_{}_{}_{}.csv".format(method.upper(), file_suffix, self.run)
 
         pred_file_path = os.path.join(self.save_dir_path, name_predictions)
         pathlib.Path(pred_file_path).mkdir(parents=True, exist_ok=True)
-        np.save(pred_file_path, y_pred.numpy()) #, don't need it?
+        np.save(os.path.join(pred_file_path, 'file.npy'), y_pred.numpy())  # , don't need it?
 
         if self.save_file:
             hist_df = pd.DataFrame(hist.history)
@@ -365,11 +370,12 @@ class FMOWClassification():
                 pred_df.to_csv(df_file_path)
 
     def create_da_spec(self):
-        da_spec_dict = {"num_domains": 10, "domain_dim": 10, "sigma": 5.5, 'softness_param': 2,
+        da_spec_dict = {"num_domains": 10, "domain_dim": 10, "sigma": 7.5, 'softness_param': 2,
                         "domain_reg_param": 1e-3, "batch_size": self.batch_size, "epochs": 50, "epochs_FT": 50,
                         "dropout": 0.5, "patience": 10, "use_optim": "adam", "orth_reg": "SRIP",
                         "source_sample_size": len(self.train_generator), "target_sample_size": len(self.test_generator),
-                        "architecture": self.feature_extractor, "bias": self.bias, "similarity_measure": self.method, 'lr': self.lr,
+                        "architecture": self.feature_extractor, "bias": self.bias, "similarity_measure": self.method,
+                        'lr': self.lr,
                         'batch_normalization': self.batch_norm,
                         "kernel": "custom" if self.kernel is not None else "single"}
 
@@ -377,7 +383,6 @@ class FMOWClassification():
         da_spec_dict['reg_method'] = da_spec_dict["orth_reg"] if self.method == 'projected' else 'none'
 
         return da_spec_dict
-
 
     def add_da_layer(self, prediction_layer):
         num_domains = self.da_spec['num_domains']
@@ -392,7 +397,6 @@ class FMOWClassification():
                     kernel=self.kernel, sigma=sigma, activation=self.activation, bias=self.bias,
                     similarity_measure=similarity_measure, orth_reg_method=reg_method,
                     lambda_orth=0.0, lambda_sparse=0.0))
-
 
     def build_model(self, feature_extractor, prediction_layer, ):
         model = DomainAdaptationModel(feature_extractor=feature_extractor, prediction_layer=prediction_layer)
@@ -423,10 +427,13 @@ class FMOWClassification():
         model = self.build_model(feature_extractor, prediction_layer)
         print("\n\n\n BEGIN TRAIN:\t ")
 
-        name = str(self.run_id) + 'e2e'
+        if not self.method == "SOURCE_ONLY":
+            name = str(self.run_id) + 'e2e' + str(self.run) + str(self.method)
+        else:
+            name = str(self.run_id) + 'e2e'
         self.save_evaluation_files(model, name_predictions=name)
 
-        #save model
+        # save model
         # path = os.path.join(self.save_dir_path + str(self.run_id),
         #                     'e2e_best')
         # pathlib.Path(path).mkdir(parents=True, exist_ok=True)
@@ -440,33 +447,64 @@ class FMOWClassification():
             if self.feature_extractor_saved_path is not None:
                 feature_extractor = tf.keras.models.load_model(self.feature_extractor_saved_path)
             feature_extractor.trainable = False
-            methods = ['cs', 'mmd', 'projected']
-            for method in ['cs', 'mmd', 'projected']:
-                feature_extractor = tf.keras.models.load_model(feature_extractor_filepath)
-                feature_extractor.trainable = False
+            methods = ['projected']
+            method = methods[self.ftmet]
+            # for method in ['cs', 'mmd', 'projected']:
+            #     feature_extractor = tf.keras.models.load_model(feature_extractor_filepath)
+            #     feature_extractor.trainable = False
 
-                self.da_spec["similarity_measure"] = method
-                prediction_layer = tf.keras.Sequential([], name='prediction_layer')  # TODO: not sure about this
-                self.add_da_layer(prediction_layer)
+            self.da_spec["similarity_measure"] = method
+            prediction_layer = tf.keras.Sequential([], name='prediction_layer')  # TODO: not sure about this
+            self.add_da_layer(prediction_layer)
 
-                model = self.build_model(feature_extractor, prediction_layer)
+            model = self.build_model(feature_extractor, prediction_layer)
 
-                print('\n BEGIN FINE TUNING:\t' + method.upper() + "\t\n")
+            print('\n BEGIN FINE TUNING:\t' + method.upper() + "\t\n")
 
-                name = str(self.run_id) + 'e2e'
-                self.save_evaluation_files(model, name_predictions=name)
+            name = str(self.run_id) + 'ft' + str(self.run) + str(self.method)
+            self.save_evaluation_files(model, name_predictions=name)
 
-                #save model
-                # path = os.path.join(self.save_dir_path + str(self.run_id),
-                #                                           'fine_tuned_best')
-                # pathlib.Path(path).mkdir(parents=True, exist_ok=True)
-                # model.save(path)
+            # save model
+            # path = os.path.join(self.save_dir_path + str(self.run_id),
+            #                                           'fine_tuned_best')
+            # pathlib.Path(path).mkdir(parents=True, exist_ok=True)
+            # model.save(path)
 
         tf.keras.backend.clear_session()
 
+    def eval(self, model):
+        dataset = get_dataset(dataset='fmow', download=True)
+        test_data = dataset.get_subset('test', transform=initialize_transform())
+        test_loader = get_eval_loader('standard', test_data, batch_size=1, )
+        y_true = []
+        y_pred = []
+        metadata_array = []
+        for x, y, meta in tqdm(test_loader):
+            x = x.permute(0, 2, 3, 1).numpy()
+            predictions = model.predict(x)
+
+            y_pred.append(np.argmax(predictions, axis=1))
+            y_true.append(y.item())
+            metadata_array.append(meta)
+
+        metadata_array = torch.stack(metadata_array).squeeze()
+        y_pred = torch.tensor(np.array(y_pred).squeeze())
+        y_true = torch.tensor(y_true)
+
+        # save data
+        path = os.path.join(self.save_dir_path + '_fmow_model_arrays',
+                            str(self.fine_tune) + str(self.run) + str(self.ftmet))
+        pathlib.Path(path).mkdir(parents=True, exist_ok=True)
+
+        np.save(os.path.join(path, 'meta.npy'), metadata_array.numpy())
+        np.save(os.path.join(path, 'y_true.npy'), y_true.numpy())
+        np.save(os.path.join(path, 'y_pred.npy'), y_pred.numpy())
+
+        #print(dataset.eval(y_pred, y_true, metadata_array))
+
 
 def initialize_transform():
-    transform_steps = [] #transforms.Resize((224, 224))]
+    transform_steps = []  # transforms.Resize((224, 224))]
     _DEFAULT_IMAGE_TENSOR_NORMALIZATION_MEAN = [0.485, 0.456, 0.406]
     _DEFAULT_IMAGE_TENSOR_NORMALIZATION_STD = [0.229, 0.224, 0.225]
     default_normalization = transforms.Normalize(
@@ -489,21 +527,23 @@ def get_wilds_data():
     valid_data = dataset.get_subset('val', transform=initialize_transform())
     test_data = dataset.get_subset('test', transform=initialize_transform())
 
-    train_loader = get_train_loader('standard', train_data, batch_size=batch_size,)
-    valid_loader = get_train_loader('standard', valid_data, batch_size=batch_size, ) #n_groups_per_batch=2)
-    test_loader = get_eval_loader('standard', test_data, batch_size=batch_size,) # n_groups_per_batch=2)
+    train_loader = get_train_loader('standard', train_data, batch_size=batch_size, )
+    valid_loader = get_train_loader('standard', valid_data, batch_size=batch_size, )  # n_groups_per_batch=2)
+    test_loader = get_eval_loader('standard', test_data, batch_size=batch_size, )  # n_groups_per_batch=2)
 
-    return dataset, DataGenerator(train_loader, batch_size=batch_size, one_hot=True, save_file=False, return_weights=False,
-                         load_files=False), \
+    return dataset, DataGenerator(train_loader, batch_size=batch_size, one_hot=True, save_file=False,
+                                  return_weights=False,
+                                  load_files=False), \
            DataGenerator(valid_loader, batch_size=batch_size, one_hot=True, save_file=False, load_files=False), \
            DataGenerator(test_loader, save_file=False, batch_size=batch_size, one_hot=True, load_files=False)
+
 
 def parser_args():
     parser = argparse.ArgumentParser(description='Camelyon classification')
     parser.add_argument('--method',
                         help='cosine_similarity, MMD, projected, None',
                         type=str,
-                        default='None')
+                        default=None)
 
     parser.add_argument('--lambda_sparse',
                         default=1e-3,
@@ -551,6 +591,7 @@ def parser_args():
     args.ft = True if args.fine_tune == "True" else False
     return args
 
+
 if __name__ == "__main__":
     # load data once
     args = parser_args()
@@ -558,12 +599,13 @@ if __name__ == "__main__":
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
 
     FMOWClassification(train_generator=train_generator,
-                          valid_generator=valid_generator,
-                          test_generator=test_generator,
-                          method=args.method, kernel=None, batch_norm=False, bias=False,
-                          timestamp=timestamp, target_domain=None, save_file=True, save_plot=False,
-                          save_feature=False, batch_size=batch_size, fine_tune=args.ft,
-                          feature_extractor='DenseNet', run=args.running,
-                          only_fine_tune=False, activation='softmax',  # only for resnet
-                          #feature_extractor_saved_path=args.fe_path
-                          ftmet=args.ftmet,).run_experiment(dataset)
+                       valid_generator=valid_generator,
+                       test_generator=test_generator,
+                       method=args.method, kernel=None, batch_norm=False, bias=False,
+                       timestamp=timestamp, target_domain=None, save_file=True, save_plot=False,
+                       save_feature=False, batch_size=batch_size, fine_tune=args.ft,
+                       feature_extractor='DenseNet', run=args.running,
+                       only_fine_tune=False, activation='softmax',  # only for resnet
+                       # feature_extractor_saved_path=args.fe_path
+                       ftmet=args.ftmet, ).run_experiment(dataset)
+

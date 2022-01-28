@@ -43,8 +43,8 @@ from wilds.common.data_loaders import get_train_loader, get_eval_loader
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 # tf.random.set_seed(1234)
 gpus = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_visible_devices(gpus[1], 'GPU')
-tf.config.experimental.set_memory_growth(gpus[1], True)
+tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
+tf.config.experimental.set_memory_growth(gpus[0], True)
 
 # from tensorflow.compat.v1 import ConfigProto
 # from tensorflow.compat.v1 import InteractiveSession
@@ -53,7 +53,7 @@ tf.config.experimental.set_memory_growth(gpus[1], True)
 # config.gpu_options.allow_growth = True
 # session = InteractiveSession(config=config)
 
-batch_size = 16
+batch_size = 32
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 # silence_tensorflow()
 # tf.random.set_seed(1234)
@@ -467,23 +467,44 @@ class WildcamClassification():
         run_start = datetime.now()
 
         hist = model.fit(x=self.train_generator,
-                         epochs=1#num_epochs,
+                         epochs=1,#num_epochs,
                          verbose=1,
                          validation_data=self.test_generator,
                          #callbacks=self.callback,
                          )
         run_end = datetime.now()
 
-        #WILDS evaluation
-        predictions = model.predict(self.test_generator)
-        y_pred = torch.tensor(np.argmax(predictions, axis=1))
+        dataset = get_dataset(dataset='iwildcam', download=True)
         test_data = dataset.get_subset('test', transform=initialize_transform())
-        dataset.eval(y_pred, test_data.y_array, test_data.metadata_array)
+        test_loader = get_eval_loader('standard', test_data, batch_size=1, )
+        y_true = []
+        y_pred = []
+        metadata_array = []
+        for x, y, meta in test_loader:
+            x = x.permute(0, 2, 3, 1).numpy()
+            predictions = model.predict(x)
+
+            y_pred.append(np.argmax(predictions, axis=1))
+            y_true.append(y)
+            metadata_array.append(metadata_array)
+
+        metadata_array = torch.tensor(np.array(metadata_array))
+        y_pred = torch.tensor(np.array(y_pred))
+        y_true = torch.tensor(np.array(y_true))
+
+        print(dataset.eval(y_pred, y_true, metadata_array))
+
+
+        #WILDS evaluation
+        #predictions_2 = model.predict(self.test_generator)
+        #y_pred = torch.tensor(np.argmax(predictions, axis=1))
+        #test_data = dataset.get_subset('test', transform=initialize_transform())
+        #dataset.eval(y_pred, test_data.y_array, test_data.metadata_array)
 
         #Check if TF computes same scores based on y_pred and y_true
-        m = tf.keras.metrics.Accuracy()
-        m.update_state(test_data.y_array, y_pred)
-        print(m.result().numpy())
+        #m = tf.keras.metrics.Accuracy()
+        #m.update_state(test_data.y_array, y_pred)
+        #print(m.result().numpy())
 
         #Eval function by tensorflow
         model.evaluate(self.test_generator, verbose=1)
@@ -655,7 +676,7 @@ def parser_args():
     parser.add_argument('--method',
                         help='cosine_similarity, MMD, projected, None',
                         type=str,
-                        default="projected")
+                        default="mmd")
 
     parser.add_argument('--lambda_sparse',
                         default=0,
