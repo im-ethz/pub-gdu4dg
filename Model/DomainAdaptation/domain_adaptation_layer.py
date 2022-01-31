@@ -107,7 +107,7 @@ class DGLayer(Layer):
                  orth_reg_method="SO",
                  lambda_OLS=1e-3,
                  lambda_orth=1e-3,
-                 lambda_sparse=1e-5,
+                 lambda_sparse=1e-6,
 
                  **kwargs):
         super(DGLayer, self).__init__(**kwargs)
