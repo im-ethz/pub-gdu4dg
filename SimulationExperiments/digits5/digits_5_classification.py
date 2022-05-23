@@ -243,7 +243,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
     run_start = datetime.now()
     # model.load_weights('my_weights')
-    hist = model.fit(x=x_source_tr, y=y_source_tr, epochs=1, verbose=2,
+    hist = model.fit(x=x_source_tr, y=y_source_tr, epochs=num_epochs, verbose=2,
                      batch_size=batch_size, shuffle=False,
                      validation_data=(x_val, y_val),
                      callbacks=callbacks,
