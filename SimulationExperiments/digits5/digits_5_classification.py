@@ -392,7 +392,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
             else:
                 callbacks = domain_callback
 
-            print('\n BEGIN FINE TUNING:\t' + method.upper() + "\t" + TARGET_DOMAIN[0] + "\n")
+            print('\n BEGIN FINE TUNING:\t' + similarity_measure.upper() + "\t" + TARGET_DOMAIN[0] + "\n")
             hist = model.fit(x=x_source_tr, y=y_source_tr.astype(np.float32), epochs=num_epochs_FT, verbose=2,
                              batch_size=batch_size, shuffle=False, validation_data=(x_val, y_val),
                              callbacks=callbacks
@@ -412,10 +412,10 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                 create_dir_if_not_exists(save_dir_path)
 
                 if single_best:
-                    save_dir_name = method.upper() + "_" + SOURCE_DOMAINS[0] + "_to_" + TARGET_DOMAIN[0] + "_" + str(
+                    save_dir_name = similarity_measure.upper() + "_" + SOURCE_DOMAINS[0] + "_to_" + TARGET_DOMAIN[0] + "_" + str(
                         run_id)
                 else:
-                    save_dir_name = method.upper() + "_" + TARGET_DOMAIN[0] + "_" + str(run_id)
+                    save_dir_name = similarity_measure.upper() + "_" + TARGET_DOMAIN[0] + "_" + str(run_id)
 
                 save_dir_path = os.path.join(save_dir_path, save_dir_name)
                 create_dir_if_not_exists(save_dir_path)
@@ -425,13 +425,13 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                 Y_DATA = decode_one_hot_vector(y_target_te)
 
                 if save_feature:
-                    df_file_path = os.path.join(save_dir_path, method.upper() + "_FT_feature_data.csv")
+                    df_file_path = os.path.join(save_dir_path, similarity_measure.upper() + "_FT_feature_data.csv")
                     pred_df = pd.DataFrame(X_DATA, columns=["x_{}".format(i) for i in range(10)])
                     pred_df['label'] = Y_DATA
                     pred_df.to_csv(df_file_path)
 
                 if save_plot:
-                    file_name = "TSNE_PLOT_" + method.upper() + "_FT" + ".png"
+                    file_name = "TSNE_PLOT_" + similarity_measure.upper() + "_FT" + ".png"
                     tsne_file_path = os.path.join(save_dir_path, file_name)
                     plot_TSNE(X_DATA, Y_DATA, plot_kde=False, file_path=tsne_file_path, show_plot=False)
 
@@ -439,10 +439,10 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                 hist_df = pd.DataFrame(hist.history)
                 duration = run_end - run_start
 
-                file_name_hist = 'history_' + method.upper() + "_FT" + '.csv'
+                file_name_hist = 'history_' + similarity_measure.upper() + "_FT" + '.csv'
                 hist_file_path = os.path.join(save_dir_path, file_name_hist)
                 hist_df.to_csv(hist_file_path)
-                hist_df.to_csv('sripsecond_' + TARGET_DOMAIN[0] + '_' + method + '_' + str(fine_tune) + '_' + str(lambda_orth) + '_' +
+                hist_df.to_csv('sripsecond_' + TARGET_DOMAIN[0] + '_' + similarity_measure + '_' + str(fine_tune) + '_' + str(lambda_orth) + '_' +
                        str(run) + '.csv')
 
                 # prepare results
@@ -467,7 +467,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                 eval_df['run_id'] = run_id
                 eval_df['trained_epochs'] = len(hist_df)
 
-                file_name_eval = 'spec_' + method.upper() + "_FT" + '.csv'
+                file_name_eval = 'spec_' + similarity_measure.upper() + "_FT" + '.csv'
                 eval_file_path = os.path.join(save_dir_path, file_name_eval)
                 eval_df.to_csv(eval_file_path)
                 # print("\n\nSPEC_FILE \n", eval_df)
