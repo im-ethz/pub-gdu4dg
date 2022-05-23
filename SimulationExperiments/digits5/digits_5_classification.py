@@ -515,7 +515,11 @@ def run_all_experiments(digits_data, args):
 
 if __name__ == "__main__":
     args = parser_args()
-    res_file_dir = args.res_file_dir + args.TARGET_DOMAIN + '_' + str(args.method) + '_' + 'ft' if args.ft else 'e2e'
+    res_file_dir = args.res_file_dir + args.TARGET_DOMAIN + '_' + str(args.method)
+    if args.ft:
+        res_file_dir += '_ft'
+    else:
+        res_file_dir += '_e2e'
     # load data once
     digits_data = DigitsData()
     if args.run_all:
