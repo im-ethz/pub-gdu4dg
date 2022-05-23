@@ -37,7 +37,7 @@ THIS_FILE = os.path.abspath(__file__)
 
 from Model.utils import decode_one_hot_vector
 from Visualization.evaluation_plots import plot_TSNE
-from SimulationExperiments.experiment_4_digits.d5_dataloader import load_digits
+from SimulationExperiments.digits5.d5_dataloader import load_digits
 
 from Model.DomainAdaptation.domain_adaptation_layer import DGLayer
 from Model.DomainAdaptation.DomainAdaptationModel import DomainAdaptationModel
