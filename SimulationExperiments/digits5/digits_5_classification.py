@@ -10,7 +10,7 @@ import sys
 import keras
 import itertools
 import logging
-from d5_argparser import parser_args
+from SimulationExperiments.digits5.d5_argparser import parser_args
 import pandas as pd
 import tensorflow as tf
 
@@ -21,7 +21,7 @@ from datetime import datetime
 from sklearn.utils import shuffle
 
 from tensorflow.python.keras.callbacks import EarlyStopping # TODO: tensorflow.python.keras.callbacks
-from digits_utils import *
+from SimulationExperiments.digits5.digits_utils import *
 
 logging.disable(logging.WARNING)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -138,7 +138,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     # print(single_source_domain)
     # dataset used in K3DA
 
-    if (single_best == True) & (SOURCE_DOMAINS[0] == TARGET_DOMAIN[0].lower()):
+    if single_best and (SOURCE_DOMAINS[0] == TARGET_DOMAIN[0].lower()):
         print('Source and target domain are the same! Skip!')
         return None
     else:
@@ -169,7 +169,6 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     ##########################################
     if architecture.lower() == "lenet":
         feature_extractor = get_lenet_feature_extractor()
-
     else:
         feature_extractor = get_domainnet_feature_extractor(dropout=dropout)
 
@@ -207,19 +206,13 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         method = "SOURCE_ONLY"
         prediction_layer.add(Dense(10, activation=activation))
 
-    callback = [EarlyStopping(patience=patience, restore_best_weights=True)]
-    domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True,
-                                     max_sample_size=5000)
-
-    if early_stopping and domain_adaptation:
-        callbacks = [callback, domain_callback]
-
-    elif early_stopping and domain_adaptation == False:
-        callbacks = [callback]
-
-    elif early_stopping == False:
-        callbacks = domain_callback if domain_adaptation else None
-
+    callbacks = []
+    if early_stopping:
+        callbacks.append(EarlyStopping(patience=patience, restore_best_weights=True))
+    if domain_adaptation:
+        callbacks.append(DomainCallback(test_data=x_source_te, train_data=x_source_tr, 
+                                        print_res=True, max_sample_size=5000))
+   
     ##########################################
     ###     INITIALIZE MODEL
     ##########################################
@@ -331,7 +324,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     #               FINE TUNE                #
     ##########################################
 
-    if domain_adaptation is False and fine_tune:
+    if not domain_adaptation and fine_tune:
 
         feature_extractor_filepath = os.path.join(save_dir_path, 'feature_extractor.h5.tmp')
         feature_extractor.save(feature_extractor_filepath)
@@ -381,16 +374,10 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
             model.compile(optimizer=optimizer, loss=tf.keras.losses.CategoricalCrossentropy(from_logits=from_logits),
                           metrics=metrics)
-
-            callback = [EarlyStopping(patience=patience, restore_best_weights=True)]
-            domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True,
-                                             max_sample_size=5000)
-
+            
+            callbacks = [DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True, max_sample_size=5000)]
             if early_stopping:
-                callbacks = [callback, domain_callback]
-
-            else:
-                callbacks = domain_callback
+                callbacks.append(EarlyStopping(patience=patience, restore_best_weights=True))
 
             print('\n BEGIN FINE TUNING:\t' + similarity_measure.upper() + "\t" + TARGET_DOMAIN[0] + "\n")
             hist = model.fit(x=x_source_tr, y=y_source_tr.astype(np.float32), epochs=num_epochs_FT, verbose=2,
