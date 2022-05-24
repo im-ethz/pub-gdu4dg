@@ -356,7 +356,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
             domain_dim = domain_adaptation_spec_dict['domain_dim']
             domain_adaptation_spec_dict["similarity_measure"] = similarity_measure
             softness_param = domain_adaptation_spec_dict["softness_param"]
-            domain_adaptation_spec_dict['reg_method'] = orth_reg_method = reg if method == 'projected' else 'none'
+            domain_adaptation_spec_dict['reg_method'] = orth_reg_method = reg if similarity_measure == 'projected' else 'none'
 
             prediction_layer.add(DGLayer(domain_units=num_domains,
                                          N=domain_dim,
