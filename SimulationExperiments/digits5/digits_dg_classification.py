@@ -2,9 +2,9 @@ import warnings
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-#from silence_tensorflow import silence_tensorflow
+from silence_tensorflow import silence_tensorflow
 
-#silence_tensorflow()
+silence_tensorflow()
 
 import sys
 import keras
@@ -41,7 +41,7 @@ from SimulationExperiments.digits5.d5_dataloader import load_digits
 
 from Model.DomainAdaptation.domain_adaptation_layer import DGLayer
 from Model.DomainAdaptation.DomainAdaptationModel import DomainAdaptationModel
-#from Model.DomainAdaptation.domain_adaptation_callback import DomainCallback
+from Model.DomainAdaptation.domain_adaptation_callback import DomainCallback
 
 
 def init_gpu(gpu, memory):
@@ -87,8 +87,6 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                           run=None,
                           num_domains=5):
 
-    if method is not None and method.lower() == "projected":
-        lambda_sparse = 0
     domain_adaptation_spec_dict = {
         "num_domains": num_domains,
         "domain_dim": 10,
@@ -102,7 +100,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     }
 
     # architecture used as feature extractor
-    architecture = domain_adaptation_spec_dict["architecture"] = "Dassl"  # "DomainNet"# "LeNet"
+    architecture = domain_adaptation_spec_dict["architecture"] = "Dassl"
 
     domain_adaptation_spec_dict["kernel"] = "custom" if kernel is not None else "single"
 
@@ -137,6 +135,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         # in case where only one single source domain is chosen
         SOURCE_DOMAINS = single_source_domain
     else:
+        # We don't use USPS for the Digit-DG experiment
         SOURCE_DOMAINS = ['mnist', 'mnistm', 'svhn', 'syn',]
 
     if single_best and SOURCE_DOMAINS[0] == TARGET_DOMAIN[0].lower():
@@ -166,6 +165,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     ##########################################
     ###     FEATURE EXTRACTOR
     ##########################################
+    # Use the DASSL feature extractor from Zhou et al.
     feature_extractor = get_dassl_feature_extractor()
 
     # if batch_norm:
@@ -200,21 +200,17 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                                      lambda_OLS=lambda_OLS,
                                      lambda_orth=lambda_orth,
                                      ))
-
     else:
         method = "SOURCE_ONLY"
         prediction_layer.add(Dense(10, activation=activation))
 
-    callback = EarlyStopping(patience=patience, restore_best_weights=True)
-#    domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True,
-#                                     max_sample_size=5000)
-
     callbacks = []
     if early_stopping:
-        callbacks.append(callback)
+        callbacks.append(EarlyStopping(patience=patience, restore_best_weights=True))
 
-    #if domain_adaptation:
-    #    callbacks.append(domain_callback)
+    if domain_adaptation:
+        callbacks.append(DomainCallback(test_data=x_source_te, train_data=x_source_tr, 
+                                        print_res=True, max_sample_size=5000))
 
     ##########################################
     ###     INITIALIZE MODEL
@@ -238,13 +234,11 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     )
 
     run_start = datetime.now()
-    # model.load_weights('my_weights')
     hist = model.fit(x=x_source_tr, y=y_source_tr, epochs=num_epochs, verbose=2,
                      batch_size=batch_size, shuffle=False,
                      validation_data=(x_val, y_val),
                      callbacks=callbacks,
                      )
-    # model.save_weights('my_weights')
     run_end = datetime.now()
 
     # model evaluation
@@ -336,7 +330,6 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         feature_extractor.trainable = False
 
         # sigma is estimated based on the median heuristic, with sample size of 5000 features
-        # sigma = domain_adaptation_spec_dict['sigma']
         sigma = domain_adaptation_spec_dict['sigma'] = sigma_median(feature_extractor.predict(x_source_tr))
         print("\n\n\n ESTIMATED SIGMA: {sigma} ".format(sigma=str(np.round(sigma, 3))))
 
@@ -380,13 +373,11 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
             model.compile(optimizer=optimizer, loss=tf.keras.losses.CategoricalCrossentropy(from_logits=from_logits),
                           metrics=metrics)
 
-            callback = EarlyStopping(patience=patience, restore_best_weights=True)
-#            domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True,
-#                                             max_sample_size=5000)
-
-            callbacks = [] # [domain_callback]
+            domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True,
+                                             max_sample_size=5000)
+            callbacks = [domain_callback]
             if early_stopping:
-                callbacks.append(callback)
+                callbacks.append(EarlyStopping(patience=patience, restore_best_weights=True))
 
             print('\n BEGIN FINE TUNING:\t' + similarity_measure.upper() + "\t" + TARGET_DOMAIN[0] + "\n")
             hist = model.fit(x=x_source_tr, y=y_source_tr.astype(np.float32), epochs=num_epochs_FT, verbose=2,
@@ -512,11 +503,8 @@ def run_all_experiments(digits_data, args):
 if __name__ == "__main__":
     args = parser_args()
     print(args)
-    res_file_dir = args.res_file_dir + args.TARGET_DOMAIN + '_' + str(args.method) # + '_' + 'ft' if args.ft else 'e2e'
-    if args.ft:
-        res_file_dir += '_ft'
-    else:
-        res_file_dir += '_e2e'
+    res_file_dir = args.res_file_dir + args.TARGET_DOMAIN + '_' + str(args.method) 
+    res_file_dir += '_ft' if args.ft else '_e2e'
     print(res_file_dir)
     # load data once
     digits_data = DigitsData()
@@ -534,8 +522,7 @@ if __name__ == "__main__":
             'early_stopping': args.early_stopping,
             'fine_tune': args.ft,
             'run': args.running,
-            'num_domains': args.num_domains,
-            #'activation': "softmax"		
+            'num_domains': args.num_domains,		
         }
         run_experiment(experiment)
 
