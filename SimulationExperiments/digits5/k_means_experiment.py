@@ -3,7 +3,7 @@ from sklearn.cluster import KMeans
 import tensorflow as tf
 from sklearn import metrics
 
-from SimulationExperiments.experiment_4_digits.digits_5_classification import DigitsData
+from SimulationExperiments.digits5.digits_5_classification import DigitsData
 
 if __name__ == '__main__':
     data = DigitsData()

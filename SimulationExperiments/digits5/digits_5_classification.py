@@ -10,7 +10,7 @@ import sys
 import keras
 import itertools
 import logging
-from d5_argparser import parser_args
+from SimulationExperiments.digits5.d5_argparser import parser_args
 import pandas as pd
 import tensorflow as tf
 
@@ -21,7 +21,7 @@ from datetime import datetime
 from sklearn.utils import shuffle
 
 from tensorflow.python.keras.callbacks import EarlyStopping # TODO: tensorflow.python.keras.callbacks
-from digits_utils import *
+from SimulationExperiments.digits5.digits_utils import *
 
 logging.disable(logging.WARNING)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
@@ -37,7 +37,7 @@ THIS_FILE = os.path.abspath(__file__)
 
 from Model.utils import decode_one_hot_vector
 from Visualization.evaluation_plots import plot_TSNE
-from SimulationExperiments.experiment_4_digits.d5_dataloader import load_digits
+from SimulationExperiments.digits5.d5_dataloader import load_digits
 
 from Model.DomainAdaptation.domain_adaptation_layer import DGLayer
 from Model.DomainAdaptation.DomainAdaptationModel import DomainAdaptationModel
@@ -138,7 +138,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     # print(single_source_domain)
     # dataset used in K3DA
 
-    if (single_best == True) & (SOURCE_DOMAINS[0] == TARGET_DOMAIN[0].lower()):
+    if single_best and (SOURCE_DOMAINS[0] == TARGET_DOMAIN[0].lower()):
         print('Source and target domain are the same! Skip!')
         return None
     else:
@@ -169,7 +169,6 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     ##########################################
     if architecture.lower() == "lenet":
         feature_extractor = get_lenet_feature_extractor()
-
     else:
         feature_extractor = get_domainnet_feature_extractor(dropout=dropout)
 
@@ -207,19 +206,13 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         method = "SOURCE_ONLY"
         prediction_layer.add(Dense(10, activation=activation))
 
-    callback = [EarlyStopping(patience=patience, restore_best_weights=True)]
-    domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True,
-                                     max_sample_size=5000)
-
-    if early_stopping and domain_adaptation:
-        callbacks = [callback, domain_callback]
-
-    elif early_stopping and domain_adaptation == False:
-        callbacks = [callback]
-
-    elif early_stopping == False:
-        callbacks = domain_callback if domain_adaptation else None
-
+    callbacks = []
+    if early_stopping:
+        callbacks.append(EarlyStopping(patience=patience, restore_best_weights=True))
+    if domain_adaptation:
+        callbacks.append(DomainCallback(test_data=x_source_te, train_data=x_source_tr, 
+                                        print_res=True, max_sample_size=5000))
+   
     ##########################################
     ###     INITIALIZE MODEL
     ##########################################
@@ -243,7 +236,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
     run_start = datetime.now()
     # model.load_weights('my_weights')
-    hist = model.fit(x=x_source_tr, y=y_source_tr, epochs=1, verbose=2,
+    hist = model.fit(x=x_source_tr, y=y_source_tr, epochs=num_epochs, verbose=2,
                      batch_size=batch_size, shuffle=False,
                      validation_data=(x_val, y_val),
                      callbacks=callbacks,
@@ -331,7 +324,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     #               FINE TUNE                #
     ##########################################
 
-    if domain_adaptation is False and fine_tune:
+    if not domain_adaptation and fine_tune:
 
         feature_extractor_filepath = os.path.join(save_dir_path, 'feature_extractor.h5.tmp')
         feature_extractor.save(feature_extractor_filepath)
@@ -356,7 +349,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
             domain_dim = domain_adaptation_spec_dict['domain_dim']
             domain_adaptation_spec_dict["similarity_measure"] = similarity_measure
             softness_param = domain_adaptation_spec_dict["softness_param"]
-            domain_adaptation_spec_dict['reg_method'] = orth_reg_method = reg if method == 'projected' else 'none'
+            domain_adaptation_spec_dict['reg_method'] = orth_reg_method = reg if similarity_measure == 'projected' else 'none'
 
             prediction_layer.add(DGLayer(domain_units=num_domains,
                                          N=domain_dim,
@@ -381,18 +374,12 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
             model.compile(optimizer=optimizer, loss=tf.keras.losses.CategoricalCrossentropy(from_logits=from_logits),
                           metrics=metrics)
-
-            callback = [EarlyStopping(patience=patience, restore_best_weights=True)]
-            domain_callback = DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True,
-                                             max_sample_size=5000)
-
+            
+            callbacks = [DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True, max_sample_size=5000)]
             if early_stopping:
-                callbacks = [callback, domain_callback]
+                callbacks.append(EarlyStopping(patience=patience, restore_best_weights=True))
 
-            else:
-                callbacks = domain_callback
-
-            print('\n BEGIN FINE TUNING:\t' + method.upper() + "\t" + TARGET_DOMAIN[0] + "\n")
+            print('\n BEGIN FINE TUNING:\t' + similarity_measure.upper() + "\t" + TARGET_DOMAIN[0] + "\n")
             hist = model.fit(x=x_source_tr, y=y_source_tr.astype(np.float32), epochs=num_epochs_FT, verbose=2,
                              batch_size=batch_size, shuffle=False, validation_data=(x_val, y_val),
                              callbacks=callbacks
@@ -412,10 +399,10 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                 create_dir_if_not_exists(save_dir_path)
 
                 if single_best:
-                    save_dir_name = method.upper() + "_" + SOURCE_DOMAINS[0] + "_to_" + TARGET_DOMAIN[0] + "_" + str(
+                    save_dir_name = similarity_measure.upper() + "_" + SOURCE_DOMAINS[0] + "_to_" + TARGET_DOMAIN[0] + "_" + str(
                         run_id)
                 else:
-                    save_dir_name = method.upper() + "_" + TARGET_DOMAIN[0] + "_" + str(run_id)
+                    save_dir_name = similarity_measure.upper() + "_" + TARGET_DOMAIN[0] + "_" + str(run_id)
 
                 save_dir_path = os.path.join(save_dir_path, save_dir_name)
                 create_dir_if_not_exists(save_dir_path)
@@ -425,13 +412,13 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                 Y_DATA = decode_one_hot_vector(y_target_te)
 
                 if save_feature:
-                    df_file_path = os.path.join(save_dir_path, method.upper() + "_FT_feature_data.csv")
+                    df_file_path = os.path.join(save_dir_path, similarity_measure.upper() + "_FT_feature_data.csv")
                     pred_df = pd.DataFrame(X_DATA, columns=["x_{}".format(i) for i in range(10)])
                     pred_df['label'] = Y_DATA
                     pred_df.to_csv(df_file_path)
 
                 if save_plot:
-                    file_name = "TSNE_PLOT_" + method.upper() + "_FT" + ".png"
+                    file_name = "TSNE_PLOT_" + similarity_measure.upper() + "_FT" + ".png"
                     tsne_file_path = os.path.join(save_dir_path, file_name)
                     plot_TSNE(X_DATA, Y_DATA, plot_kde=False, file_path=tsne_file_path, show_plot=False)
 
@@ -439,10 +426,10 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                 hist_df = pd.DataFrame(hist.history)
                 duration = run_end - run_start
 
-                file_name_hist = 'history_' + method.upper() + "_FT" + '.csv'
+                file_name_hist = 'history_' + similarity_measure.upper() + "_FT" + '.csv'
                 hist_file_path = os.path.join(save_dir_path, file_name_hist)
                 hist_df.to_csv(hist_file_path)
-                hist_df.to_csv('sripsecond_' + TARGET_DOMAIN[0] + '_' + method + '_' + str(fine_tune) + '_' + str(lambda_orth) + '_' +
+                hist_df.to_csv('sripsecond_' + TARGET_DOMAIN[0] + '_' + similarity_measure + '_' + str(fine_tune) + '_' + str(lambda_orth) + '_' +
                        str(run) + '.csv')
 
                 # prepare results
@@ -467,7 +454,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                 eval_df['run_id'] = run_id
                 eval_df['trained_epochs'] = len(hist_df)
 
-                file_name_eval = 'spec_' + method.upper() + "_FT" + '.csv'
+                file_name_eval = 'spec_' + similarity_measure.upper() + "_FT" + '.csv'
                 eval_file_path = os.path.join(save_dir_path, file_name_eval)
                 eval_df.to_csv(eval_file_path)
                 # print("\n\nSPEC_FILE \n", eval_df)
@@ -515,7 +502,11 @@ def run_all_experiments(digits_data, args):
 
 if __name__ == "__main__":
     args = parser_args()
-    res_file_dir = args.res_file_dir + args.TARGET_DOMAIN + '_' + str(args.method) + '_' + 'ft' if args.ft else 'e2e'
+    res_file_dir = args.res_file_dir + args.TARGET_DOMAIN + '_' + str(args.method)
+    if args.ft:
+        res_file_dir += '_ft'
+    else:
+        res_file_dir += '_e2e'
     # load data once
     digits_data = DigitsData()
     if args.run_all:
