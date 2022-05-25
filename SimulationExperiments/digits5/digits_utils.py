@@ -1,11 +1,12 @@
 import os
+from pathlib import Path
+
 import numpy as np
-from sklearn.metrics import euclidean_distances
 import tensorflow as tf
+import tensorflow_probability as tfp
+from sklearn.metrics import euclidean_distances
 from tensorflow.python.keras.layers import *
 from tensorflow_probability.python.math.psd_kernels.positive_semidefinite_kernel import _SumKernel
-import tensorflow_probability as tfp
-from pathlib import Path
 
 img_shape = (32, 32, 3)
 
@@ -72,12 +73,10 @@ def get_dassl_feature_extractor(dropout=0.5):
         , tf.keras.layers.ReLU()
         , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
 
-	, Conv2D(64, strides=(1, 1), kernel_size=(3, 3), padding="same")
-        , tf.keras.layers.ReLU()
+        , Conv2D(64, strides=(1, 1), kernel_size=(3, 3), padding="same"), tf.keras.layers.ReLU()
         , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
 
-	, Conv2D(64, strides=(1, 1), kernel_size=(3, 3), padding="same")
-        , tf.keras.layers.ReLU()
+        , Conv2D(64, strides=(1, 1), kernel_size=(3, 3), padding="same"), tf.keras.layers.ReLU()
         , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
 
         , Flatten()

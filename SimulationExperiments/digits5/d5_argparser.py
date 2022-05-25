@@ -57,5 +57,5 @@ def parser_args():
     args = parser.parse_args()
     if args.method == 'None':
         args.method = None
-    args.ft = True if args.fine_tune == "True" else False
+    args.ft = args.fine_tune == "True"
     return args

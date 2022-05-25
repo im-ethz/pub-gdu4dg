@@ -235,13 +235,11 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     )
 
     run_start = datetime.now()
-    # model.load_weights('my_weights')
     hist = model.fit(x=x_source_tr, y=y_source_tr, epochs=num_epochs, verbose=2,
                      batch_size=batch_size, shuffle=False,
                      validation_data=(x_val, y_val),
                      callbacks=callbacks,
                      )
-    # model.save_weights('my_weights')
     run_end = datetime.now()
 
     # model evaluation
@@ -380,10 +378,12 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                 callbacks.append(EarlyStopping(patience=patience, restore_best_weights=True))
 
             print('\n BEGIN FINE TUNING:\t' + similarity_measure.upper() + "\t" + TARGET_DOMAIN[0] + "\n")
+            run_start = datetime.now()
             hist = model.fit(x=x_source_tr, y=y_source_tr.astype(np.float32), epochs=num_epochs_FT, verbose=2,
                              batch_size=batch_size, shuffle=False, validation_data=(x_val, y_val),
                              callbacks=callbacks
                              )
+            run_end = datetime.now()
             model.evaluate(x_target_te, y_target_te, verbose=2)
 
             if save_plot or save_file:
