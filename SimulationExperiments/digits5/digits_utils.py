@@ -62,6 +62,30 @@ def get_domainnet_feature_extractor(dropout=0.5):
     return feature_exctractor
 
 
+def get_dassl_feature_extractor(dropout=0.5):
+    feature_exctractor = tf.keras.Sequential([
+        Conv2D(64, strides=(1, 1), kernel_size=(3, 3), padding="same", input_shape=img_shape)
+        , tf.keras.layers.ReLU()
+        , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
+
+        , Conv2D(64, strides=(1, 1), kernel_size=(3, 3), padding="same")
+        , tf.keras.layers.ReLU()
+        , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
+
+	, Conv2D(64, strides=(1, 1), kernel_size=(3, 3), padding="same")
+        , tf.keras.layers.ReLU()
+        , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
+
+	, Conv2D(64, strides=(1, 1), kernel_size=(3, 3), padding="same")
+        , tf.keras.layers.ReLU()
+        , MaxPool2D(pool_size=(2, 2), strides=(2, 2))
+
+        , Flatten()
+    ], name='feature_extractor_dassl_digits')
+
+    return feature_exctractor
+
+
 def get_lenet_feature_extractor():
     feature_exctractor = tf.keras.Sequential([
         Conv2D(32, kernel_size=(3, 3), activation='relu')
