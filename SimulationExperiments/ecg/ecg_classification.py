@@ -221,7 +221,7 @@ class ECGClassification:
         prediction_layer.add(
             DGLayer(domain_units=num_domains, N=domain_dim, softness_param=softness_param, units=ECGData.NUM_CLASSES,
                     kernel=self.kernel, sigma=sigma, activation=self.activation, bias=self.bias,
-                    similarity_measure=similarity_measure, orth_pen_method=reg_method, ))
+                    similarity_measure=similarity_measure, orth_reg_method=reg_method, ))
 
     def build_model(self, feature_extractor, prediction_layer,):
         model = DomainAdaptationModel(feature_extractor=feature_extractor, prediction_layer=prediction_layer)

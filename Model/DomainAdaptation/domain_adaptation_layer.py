@@ -83,7 +83,7 @@ class DGLayer(Layer):
             >>>                     activation='sigmoid',
             >>>                     sigma=1.2,
             >>>                     similarity_measure='projected',
-            >>>                     domain_reg_method='SO'))
+            >>>                     orth_reg_method='SO'))
     """
     def __init__(self,
 
