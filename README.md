@@ -20,7 +20,7 @@ To exploit this I.E.D. assumption, we developed the Gatd Domain Units. Each GDU 
     <em>Figure 1 Visualization of the DG layer (left panel). The DG layer layer consists of several GDUs that represent the elementary distributions. During training, these GDUs learn the elementary domain bases <MATH> V_{1} , ... , V_{M} </MATH> that approximate these distributions.</em>
 </p>
 
-### How can I transfer the I.E.D. assumptiona nd GDUs to my problem setting?
+### How can I transfer the I.E.D. assumption and GDUs to my problem setting?
 
 ### How can I explain and interpret what the GDUs have learned?
 
