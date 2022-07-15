@@ -12,7 +12,7 @@ We postulate the elementary domain bases are the invariant subspaces that allow 
 
 ### How do we eploit the idea of elementary distributions in practice?
 
-Each GDU learns an embedding of an individual elementary domain that allows us to encode the domain similarities during the training. During inference, the GDUs compute similarities between an observation and each of the corresponding elementary distributions which are then used to form a weighted ensemble of learning machines (see Figure 1).
+To exploit this I.E.D. assumption, we developed the Gatd Domain Units. Each GDU learns an embedding of an individual elementary domain that allows us to encode the domain similarities during the training. During inference, the GDUs compute similarities between an observation and each of the corresponding elementary distributions which are then used to form a weighted ensemble of learning machines (see Figure 1).
 
 <p align="center">
   <img width="460" height="300" src="https://user-images.githubusercontent.com/73110207/179177894-0528920c-1063-4834-ab3f-852a0ab2d156.png">
@@ -20,6 +20,16 @@ Each GDU learns an embedding of an individual elementary domain that allows us t
     <em>Figure 1 Visualization of the DG layer (left panel). The DG layer layer consists of several GDUs that represent the elementary distributions. During training, these GDUs learn the elementary domain bases <MATH> V_{1} , ... , V_{M} </MATH> that approximate these distributions.</em>
 </p>
 
-## Install
+### How can I transfer the I.E.D. assumptiona nd GDUs to my problem setting?
+
+### How can I explain and interpret what the GDUs have learned?
+
+## Get started: Integrate Gated Domain Units in your deepl elarning models
+
+### Install
 
 Currently we do not support installation via pip or conda. To install and use our DGLayer in the meantime, please clone this repository.
+
+### Example: Extend existing deep learning Models with Gated Domain Units
+
+### Set the parameters
