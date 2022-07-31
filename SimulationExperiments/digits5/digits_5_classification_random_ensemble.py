@@ -12,6 +12,7 @@ import logging
 from SimulationExperiments.digits5.d5_argparser import parser_args
 import pandas as pd
 import tensorflow as tf
+import numpy as np
 
 tf.random.set_seed(1234)
 
@@ -194,11 +195,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
     # model evaluation
     
-    # Append `num_domains` classification heads Dense(10) and average
-    # their predictions to get an ensemble. This way we match the complexity
-    # of the ensemble model with the GDU level complexity and make the
-    # comparison more fair.
-    
+    # Sample ensemble weights aka betas from a probability simplex
     betas = np.random.exponential(scale=1.0, size=n)
     betas /= sum(betas)
     betas = tf.convert_to_tensor(betas)
