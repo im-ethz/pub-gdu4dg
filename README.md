@@ -28,7 +28,7 @@ To exploit this I.E.D. assumption, we developed the Gatd Domain Units. Each GDU 
 
 ### How can I explain and interpret what the GDUs have learned?
 
-## Get started: Integrate Gated Domain Units in your deepl elarning models
+## 🚀 Get started
 
 ### Install
 
