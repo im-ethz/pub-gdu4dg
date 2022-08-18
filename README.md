@@ -40,3 +40,18 @@ Currently we do not support installation via pip or conda. To install and use ou
 ### Example: Extend existing deep learning Models with Gated Domain Units
 
 ### Set the parameters
+
+# Citation
+Original article: [Gated Domain Units for Multi-source Domain Generalization](https://doi.org/10.48550/arxiv.2206.12444)
+
+```
+@article{https://doi.org/10.48550/arxiv.2206.12444,
+  doi = {10.48550/ARXIV.2206.12444},
+  url = {https://arxiv.org/abs/2206.12444},
+  author = {Föll, Simon and Dubatovka, Alina and Ernst, Eugen and Maritsch, Martin and Okanovic, Patrik and Thäter, Gudrun and Buhmann, Joachim M. and Wortmann, Felix and Muandet, Krikamol},
+  title = {Gated Domain Units for Multi-source Domain Generalization},
+  publisher = {arXiv},
+  year = {2022},
+  copyright = {arXiv.org perpetual, non-exclusive license}
+}
+```
