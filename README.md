@@ -1,6 +1,7 @@
 # Gated Domain Units (TensorFlow)
 
 [![DOI](https://img.shields.io/badge/DOI-2206.12444/arxiv.org/abs/2206.12444-red.svg)](https://arxiv.org/abs/2206.12444)
+![GDU_logo](https://user-images.githubusercontent.com/73110207/185412013-40309db3-dc3d-4f32-bf65-6c00e87d28a7.png)
 
 For the PyTorch implementation please click [here](https://github.com/im-ethz/gdu4dg-pytorch).
 
