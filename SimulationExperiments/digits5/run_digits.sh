@@ -1,0 +1,1 @@
+python /local/home/sfoell/GitHub/gdu-old/SimulationExperiments/digits5/digits_5_classification_SF.py

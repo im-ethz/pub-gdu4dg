@@ -1,3 +1,16 @@
+'''
+nohup /local/home/sfoell/anaconda3/envs/gdu_old/bin/python3.8 -u /local/home/sfoell/MTEC-IM-309/pub-gdu4dg/SimulationExperiments/digits5/digits_5_classification_random_ensemble.py > /local/home/sfoell/MTEC-IM-309/pub-gdu4dg/SimulationExperiments/digits5/digits_5_classification_random_ensemble.log 2>&1 &
+'''
+import os
+import sys
+# Find code directory relative to our directory
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+abspath = os.path.abspath(__file__)
+os.chdir(os.path.dirname(abspath))
+sys.path.append(os.path.abspath(os.path.join(__file__, '../../..')))
+THIS_FILE = os.path.abspath(__file__)
+
+
 import warnings
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -6,7 +19,7 @@ from silence_tensorflow import silence_tensorflow
 
 silence_tensorflow()
 
-import sys
+
 import itertools
 import logging
 from SimulationExperiments.digits5.d5_argparser import parser_args
@@ -50,10 +63,10 @@ def init_gpu(gpu, memory):
             print(e)
 
 
-init_gpu(gpu=0, memory=6000)
+init_gpu(gpu=0, memory=8000)
 
 # File path to the location where the results are stored
-res_file_dir = "/local/home/pokanovic/project2/results/frozen"
+res_file_dir = "/local/home/sfoell/NeurIPS/results/2022_Response/RandomEnsemble"
 SOURCE_SAMPLE_SIZE = 25000
 TARGET_SAMPLE_SIZE = 9000
 img_shape = (32, 32, 3)
@@ -65,13 +78,14 @@ class DigitsData(object):
         self.x_train_dict, self.y_train_dict, self.x_test_dict, self.y_test_dict = load_digits(test_size=test_size)
 
 
-def digits_classification(method, TARGET_DOMAIN, single_best=False, single_source_domain=None, batch_norm=False,
+def digits_classification(method = "ERM random ensemble", TARGET_DOMAIN = ['mnistm'], single_best=False, single_source_domain=None, batch_norm=False,
                           lr=0.001, save_file=True, save_plot=False, save_feature=False, activation="tanh",
                           lambda_sparse=0,  # 1e-1,
                           lambda_OLS=0,  # 1e-1,
                           lambda_orth=0,  # 1e-1,
                           early_stopping=True, bias=False, fine_tune=True, kernel=None, data: DigitsData = None,
                           run=None, num_domains=5):
+
     domain_adaptation_spec_dict = {"num_domains": num_domains, "domain_dim": 10, "sigma": 7.5, 'softness_param': 2,
         "similarity_measure": method,
         "img_shape": img_shape, "bias": bias, "source_sample_size": SOURCE_SAMPLE_SIZE,
@@ -95,7 +109,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     use_optim = domain_adaptation_spec_dict['use_optim'] = 'adam'  # "SGD"
     optimizer = tf.keras.optimizers.SGD(lr) if use_optim.lower() == "sgd" else tf.keras.optimizers.Adam(lr)
 
-    batch_size = domain_adaptation_spec_dict['batch_size'] = 128
+    batch_size = domain_adaptation_spec_dict['batch_size'] = 512
     domain_adaptation_spec_dict['epochs'] = num_epochs = 250 if early_stopping else 100
     domain_adaptation_spec_dict['epochs_FT'] = num_epochs_FT = 250 if early_stopping else 100
     domain_adaptation_spec_dict['lr'] = lr
@@ -164,7 +178,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     # their predictions to get an ensemble. This way we match the complexity
     # of the ensemble model with the GDU level complexity and make the
     # comparison more fair.
-    preds = [Dense(10)(x_tilda) for _ in range(num_domains)]
+    preds = [Dense(10)(x_tilda) for _ in range(5)]
     train_outputs = tf.keras.layers.average(preds)
     train_model = tf.keras.Model(inputs=inputs, outputs=train_outputs)
 
@@ -177,8 +191,8 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     ##########################################
 
     train_model.build(input_shape=x_source_tr.shape)
-    train_model.feature_extractor.summary()
-    train_model.prediction_layer.summary()
+    #train_model.feature_extractor.summary()
+    #train_model.prediction_layer.summary()
 
     metrics = [tf.keras.metrics.CategoricalAccuracy(),
                tf.keras.metrics.CategoricalCrossentropy(from_logits=from_logits)]
@@ -191,16 +205,24 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     run_start = datetime.now()
     hist = train_model.fit(x=x_source_tr, y=y_source_tr, epochs=num_epochs, verbose=2, batch_size=batch_size, shuffle=False,
                      validation_data=(x_val, y_val), callbacks=callbacks, )
+
+    model_res = train_model.evaluate(x_target_te, y_target_te, verbose=0)
+    metric_names = train_model.metrics_names
+    eval_df = pd.DataFrame(model_res).transpose()
+    eval_df.columns = metric_names
+    print(eval_df)
+
     run_end = datetime.now()
 
     # model evaluation
     
     # Sample ensemble weights aka betas from a probability simplex
+    n = 5
     betas = np.random.exponential(scale=1.0, size=n)
     betas /= sum(betas)
-    betas = tf.convert_to_tensor(betas)
-    outputs = tf.tensordot(preds, betas)
-    #outputs = tf.keras.layers.average(preds)
+    betas = tf.convert_to_tensor(betas.astype(dtype="float32"))
+    outputs = tf.tensordot(preds, betas, axes=[0, 0])
+
     model = tf.keras.Model(inputs=inputs, outputs=outputs)
     model.build(input_shape=x_source_tr.shape)
     model.compile(optimizer=optimizer, loss=tf.keras.losses.CategoricalCrossentropy(from_logits=from_logits), metrics=metrics, )
@@ -210,77 +232,6 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     eval_df = pd.DataFrame(model_res).transpose()
     eval_df.columns = metric_names
     print(eval_df)
-
-    if save_plot or save_file:
-        run_id = np.random.randint(0, 10000, 1)[0]
-        save_dir_path = os.path.join(res_file_dir, "run_" + str(run))
-        create_dir_if_not_exists(save_dir_path)
-        save_dir_path = os.path.join(save_dir_path, "SINGLE_BEST") if single_best else os.path.join(save_dir_path,
-                                                                                                    "SOURCE_COMBINED")
-
-        create_dir_if_not_exists(save_dir_path)
-
-        save_dir_path = os.path.join(save_dir_path, TARGET_DOMAIN[0])
-        create_dir_if_not_exists(save_dir_path)
-
-        if single_best:
-            save_dir_name = method.upper() + "_" + SOURCE_DOMAINS[0] + "_to_" + TARGET_DOMAIN[0] + "_" + str(run_id)
-        else:
-            save_dir_name = method.upper() + "_" + TARGET_DOMAIN[0] + "_" + str(run_id)
-
-        save_dir_path = os.path.join(save_dir_path, save_dir_name)
-        create_dir_if_not_exists(save_dir_path)
-
-    if save_plot or save_feature:
-        X_DATA = model.predict(x_target_te)
-        Y_DATA = decode_one_hot_vector(y_target_te)
-
-        if save_feature:
-            df_file_path = os.path.join(save_dir_path, method.upper() + "_feature_data.csv")
-            pred_df = pd.DataFrame(X_DATA, columns=["x_{}".format(i) for i in range(10)])
-            pred_df['label'] = Y_DATA
-            pred_df.to_csv(df_file_path)
-
-        if save_plot:
-            file_name = "TSNE_PLOT_" + method.upper() + ".png"
-            tsne_file_path = os.path.join(save_dir_path, file_name)
-            plot_TSNE(X_DATA, Y_DATA, plot_kde=False, file_path=tsne_file_path, show_plot=False)
-
-    if save_file:
-        hist_df = pd.DataFrame(hist.history)
-        duration = run_end - run_start
-
-        file_name_hist = 'history_' + method.upper() + '.csv'
-        hist_file_path = os.path.join(save_dir_path, file_name_hist)
-        hist_df.to_csv(hist_file_path)
-        hist_df.to_csv(
-            'srip_' + TARGET_DOMAIN[0] + '_' + method + '_' + str(fine_tune) + '_' + str(lambda_orth) + '_' + str(
-                run) + '.csv')
-
-        model_res = model.evaluate(x_target_te, y_target_te, verbose=2)
-        metric_names = model.metrics_names
-        eval_df = pd.DataFrame(model_res).transpose()
-        eval_df.columns = metric_names
-
-        test_sources = ",".join(TARGET_DOMAIN)
-        train_sources = ",".join(SOURCE_DOMAINS)
-
-        eval_df['source_domain'] = train_sources
-        eval_df['target_domain'] = test_sources
-
-        # rund specifications
-        domain_adaptation_parameter_names = list(domain_adaptation_spec_dict.keys())
-        domain_adaptation_parameters_df = pd.DataFrame(domain_adaptation_spec_dict.values()).transpose()
-        domain_adaptation_parameters_df.columns = domain_adaptation_parameter_names
-
-        eval_df = pd.concat([eval_df, domain_adaptation_parameters_df], axis=1)
-        eval_df['duration'] = duration
-        eval_df['run_id'] = run_id
-        eval_df['trained_epochs'] = len(hist_df)
-
-        file_name_eval = 'spec_' + method.upper() + '.csv'
-        eval_file_path = os.path.join(save_dir_path, file_name_eval)
-        eval_df.to_csv(eval_file_path)
 
     tf.keras.backend.clear_session()
     return None
@@ -295,16 +246,11 @@ def run_experiment(experiment):
         pass
 
 
-def run_all_experiments(digits_data, args):
-    for i in [4]:
+def run_all_experiments(digits_data):
+    for i in range(10):
         experiments = []
-        for experiment in itertools.product([args.method], [[args.TARGET_DOMAIN]], [True], [0, 1e-3, 1e-2, 1e-1],
-                                            [0, 1e-3, 1e-2, 1e-1], [args.ft]):
-            experiments.append(
-                {'data': digits_data, 'method': experiment[0], 'kernel': None, 'TARGET_DOMAIN': experiment[1],
-                    'lambda_sparse': experiment[3], 'lambda_OLS': experiment[4], 'lambda_orth': 0,
-                    'early_stopping': experiment[2], 'run': i, 'fine_tune': experiment[5],
-                    'num_domains': args.num_domains})
+        for TARGET_DOMAIN in [['mnist'], ['mnistm'], ['svhn'], ['syn'], ['usps']]:
+            experiments.append({'data': digits_data, 'TARGET_DOMAIN': TARGET_DOMAIN, 'num_domains': 5})
 
         print(f'Running {len(experiments)} experiments')
 
@@ -313,19 +259,8 @@ def run_all_experiments(digits_data, args):
 
 
 if __name__ == "__main__":
-    args = parser_args()
-    res_file_dir = args.res_file_dir + args.TARGET_DOMAIN + '_' + "random_ensemble"
-    if args.ft:
-        res_file_dir += '_ft'
-    else:
-        res_file_dir += '_e2e'
-    # load data once
+
+    res_file_dir = res_file_dir
     digits_data = DigitsData()
-    if args.run_all:
-        run_all_experiments(digits_data, args)
-    else:
-        experiment = {'data': digits_data, 'method': "emsemble", 'kernel': None, 'TARGET_DOMAIN': [args.TARGET_DOMAIN],
-            'lambda_sparse': args.lambda_sparse, 'lambda_OLS': args.lambda_OLS, 'lambda_orth': args.lambda_orth,
-            'early_stopping': args.early_stopping, 'fine_tune': args.ft, 'run': args.running,
-            'num_domains': args.num_domains}
-        run_experiment(experiment)
+    run_all_experiments(digits_data)
+

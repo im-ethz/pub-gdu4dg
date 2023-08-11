@@ -12,6 +12,7 @@ import logging
 from SimulationExperiments.digits5.d5_argparser import parser_args
 import pandas as pd
 import tensorflow as tf
+from keras.engine.topology import Layer
 
 tf.random.set_seed(1234)
 
@@ -163,6 +164,37 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     # their predictions to get an ensemble. This way we match the complexity
     # of the ensemble model with the GDU level complexity and make the
     # comparison more fair.
+
+
+
+    H = 2
+    T = 3
+
+    class ConvexCombination(Layer):
+        def __init__(self, **kwargs):
+            super(ConvexCombination, self).__init__(**kwargs)
+
+        def build(self, input_shape):
+            print(input_shape)
+            self.lambd = self.add_weight(name='lambda',
+                                         #shape=input_shape[0],  # Adding one dimension for broadcasting
+                                         initializer='glorot_uniform',  # Try also 'ones' and 'uniform'
+                                         trainable=False)
+            super(ConvexCombination, self).build(input_shape)
+
+        def call(self, x):
+            # x is a list of two tensors with shape=(batch_size, H, T)
+            h1, h2 = x
+            return self.lambd * h1 + (1 - self.lambd) * h2
+
+        def compute_output_shape(self, input_shape):
+            return input_shape[0]
+
+
+    preds = [Dense(10)(x_tilda) for _ in range(2)]
+    cc = ConvexCombination()(preds)
+    model =  tf.keras.Model(inputs=inputs, outputs=cc)
+
     preds = [Dense(10)(x_tilda) for _ in range(num_domains)]
     outputs = tf.keras.layers.average(preds)
     model = tf.keras.Model(inputs=inputs, outputs=outputs)

@@ -8,7 +8,7 @@ from os import path
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
 
-base_path = "/local/home/pokanovic/project2/data/DigitFive"
+base_path = "/wave/odin/digitfive"
 
 
 class DigitFiveDataset(data.Dataset):

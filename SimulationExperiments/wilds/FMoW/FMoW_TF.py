@@ -36,8 +36,8 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 # tf.config.experimental.set_memory_growth(gpus[0], True)
 
 gpus = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_visible_devices(gpus[1], 'GPU')
-tf.config.experimental.set_memory_growth(gpus[1], True)
+tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
+tf.config.experimental.set_memory_growth(gpus[0], True)
 
 # from tensorflow.compat.v1 import ConfigProto
 # from tensorflow.compat.v1 import InteractiveSession
@@ -315,7 +315,7 @@ class FMOWClassification():
         run_start = datetime.now()
 
         hist = model.fit(x=self.train_generator,
-                         epochs=num_epochs,
+                         epochs=1,#num_epochs,
                          verbose=1,
                          validation_data=self.valid_generator,
                          callbacks=self.callback,

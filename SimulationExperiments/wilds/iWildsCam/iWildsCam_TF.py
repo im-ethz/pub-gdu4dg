@@ -10,7 +10,6 @@ os.chdir(os.path.dirname(abspath))
 sys.path.append(os.path.abspath(os.path.join(__file__, '../../../..')))
 THIS_FILE = os.path.abspath(__file__)
 
-
 import argparse
 import logging
 import os
@@ -18,9 +17,6 @@ import pathlib
 import sys
 import warnings
 from datetime import datetime
-
-
-
 
 import keras
 import numpy as np
@@ -37,14 +33,11 @@ from tqdm import tqdm
 from wilds import get_dataset
 from wilds.common.data_loaders import get_train_loader, get_eval_loader
 
-
-
-
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 # tf.random.set_seed(1234)
 gpus = tf.config.experimental.list_physical_devices('GPU')
-tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
-tf.config.experimental.set_memory_growth(gpus[0], True)
+tf.config.experimental.set_visible_devices(gpus[1], 'GPU')
+tf.config.experimental.set_memory_growth(gpus[1], True)
 
 # from tensorflow.compat.v1 import ConfigProto
 # from tensorflow.compat.v1 import InteractiveSession
@@ -53,7 +46,7 @@ tf.config.experimental.set_memory_growth(gpus[0], True)
 # config.gpu_options.allow_growth = True
 # session = InteractiveSession(config=config)
 
-batch_size = 32
+batch_size = 16
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 # silence_tensorflow()
 # tf.random.set_seed(1234)
@@ -284,7 +277,7 @@ class WildcamClassification():
         run_start = datetime.now()
 
         hist = model.fit(x=self.train_generator,
-                         epochs=1,#num_epochs,
+                         epochs=num_epochs,
                          verbose=1,
                          validation_data=self.test_generator,
                          #callbacks=self.callback,
@@ -364,7 +357,7 @@ class WildcamClassification():
 
     def create_da_spec(self):
         da_spec_dict = {"num_domains": 10, "domain_dim": 10, "sigma": 25, 'softness_param': 2,
-                        "domain_reg_param": 1e-3, "batch_size": self.batch_size, "epochs": 12, "epochs_FT": 12,
+                        "domain_reg_param": 1e-3, "batch_size": self.batch_size, "epochs": 1, "epochs_FT": 12,
                         "dropout": 0.5, "patience": 10, "use_optim": "adam", "orth_reg": "SRIP",
                         "source_sample_size": len(self.train_generator), "target_sample_size": len(self.test_generator),
                         "architecture": self.feature_extractor, "bias": self.bias, "similarity_measure": self.method, 'lr': self.lr,
@@ -554,7 +547,7 @@ if __name__ == "__main__":
                           timestamp=timestamp, target_domain=None, save_file=True, save_plot=False,
                           save_feature=False, batch_size=batch_size, fine_tune=args.ft,
                           feature_extractor='ResNet', run=args.running,
-                          only_fine_tune=False, activation='softmax',
+                          only_fine_tune=False, activation='linear',
                           metadata =metadata, y_true = y_true, dataset = dataset,
                           #feature_extractor_saved_path=args.fe_path
                           ftmet=args.ftmet,).run_experiment()

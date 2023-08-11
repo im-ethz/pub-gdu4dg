@@ -16,24 +16,25 @@ import tensorflow as tf
 
 tf.random.set_seed(1234)
 
-
 from datetime import datetime
 from sklearn.utils import shuffle
-
 from tensorflow.python.keras.callbacks import EarlyStopping # TODO: tensorflow.python.keras.callbacks
 from SimulationExperiments.digits5.digits_utils import *
 
 logging.disable(logging.WARNING)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Find code directory relative to our directory
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 abspath = os.path.abspath(__file__)
 os.chdir(os.path.dirname(abspath))
-
 sys.path.append(os.path.abspath(os.path.join(__file__, '../../..')))
 THIS_FILE = os.path.abspath(__file__)
 
+from d5_argparser import parser_args
+from Visualization.evaluation_plots import plot_TSNE
+from SimulationExperiments.digits5.d5_dataloader import load_digits
+from SimulationExperiments.digits5.digits_utils import *
 
 from Model.utils import decode_one_hot_vector
 from Visualization.evaluation_plots import plot_TSNE
@@ -42,7 +43,6 @@ from SimulationExperiments.digits5.d5_dataloader import load_digits
 from Model.DomainAdaptation.domain_adaptation_layer import DGLayer
 from Model.DomainAdaptation.DomainAdaptationModel import DomainAdaptationModel
 from Model.DomainAdaptation.domain_adaptation_callback import DomainCallback
-
 
 def init_gpu(gpu, memory):
     used_gpu = gpu
@@ -55,7 +55,6 @@ def init_gpu(gpu, memory):
         except RuntimeError as e:
             print(e)
 
-
 init_gpu(gpu=0, memory=6000)
 
 # File path to the location where the results are stored
@@ -63,7 +62,6 @@ res_file_dir = "/local/home/pokanovic/project2/results/frozen"
 SOURCE_SAMPLE_SIZE = 25000
 TARGET_SAMPLE_SIZE = 9000
 img_shape = (32, 32, 3)
-
 
 # load data once in the program and keep in class
 class DigitsData(object):
@@ -76,16 +74,16 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
                           lr=0.001,
                           save_file=True, save_plot=False, save_feature=False,
                           activation="tanh",
-                          lambda_sparse=0,  # 1e-1,
-                          lambda_OLS=0,  # 1e-1,
-                          lambda_orth=0,  # 1e-1,
+                          lambda_sparse=0.001,  # 1e-1,
+                          lambda_OLS=0.001,  # 1e-1,
+                          lambda_orth=0.001,  # 1e-1,
                           early_stopping=True,
                           bias=False,
                           fine_tune=True,
                           kernel=None,
                           data: DigitsData = None,
                           run=None,
-                          num_domains=5):
+                          num_domains=10):
     domain_adaptation_spec_dict = {
         "num_domains": num_domains,
         "domain_dim": 10,
@@ -117,8 +115,8 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     optimizer = tf.keras.optimizers.SGD(lr) if use_optim.lower() == "sgd" else tf.keras.optimizers.Adam(lr)
 
     batch_size = domain_adaptation_spec_dict['batch_size'] = 128
-    domain_adaptation_spec_dict['epochs'] = num_epochs = 250 if early_stopping else 100
-    domain_adaptation_spec_dict['epochs_FT'] = num_epochs_FT = 250 if early_stopping else 100
+    domain_adaptation_spec_dict['epochs']  = 250 if early_stopping else 100
+    domain_adaptation_spec_dict['epochs_FT'] = 250 if early_stopping else 100
     domain_adaptation_spec_dict['lr'] = lr
     domain_adaptation_spec_dict['dropout'] = dropout = 0.5
     domain_adaptation_spec_dict['patience'] = patience = 10
@@ -187,7 +185,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
         similarity_measure = domain_adaptation_spec_dict["similarity_measure"]
         softness_param = domain_adaptation_spec_dict["softness_param"]
 
-        prediction_layer.add(DGLayer(domain_units=num_domains,
+        prediction_layer.add(DGLayer(domain_units=10,
                                      N=domain_dim,
                                      softness_param=softness_param,
                                      units=10,
@@ -210,9 +208,9 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     if early_stopping:
         callbacks.append(EarlyStopping(patience=patience, restore_best_weights=True))
     if domain_adaptation:
-        callbacks.append(DomainCallback(test_data=x_source_te, train_data=x_source_tr, 
+        callbacks.append(DomainCallback(test_data=x_source_te, train_data=x_source_tr,
                                         print_res=True, max_sample_size=5000))
-   
+
     ##########################################
     ###     INITIALIZE MODEL
     ##########################################
@@ -235,7 +233,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
     )
 
     run_start = datetime.now()
-    hist = model.fit(x=x_source_tr, y=y_source_tr, epochs=num_epochs, verbose=2,
+    hist = model.fit(x=x_source_tr, y=y_source_tr, epochs=250, verbose=2,
                      batch_size=batch_size, shuffle=False,
                      validation_data=(x_val, y_val),
                      callbacks=callbacks,
@@ -349,7 +347,7 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
             softness_param = domain_adaptation_spec_dict["softness_param"]
             domain_adaptation_spec_dict['reg_method'] = orth_reg_method = reg if similarity_measure == 'projected' else 'none'
 
-            prediction_layer.add(DGLayer(domain_units=num_domains,
+            prediction_layer.add(DGLayer(domain_units=10,
                                          N=domain_dim,
                                          softness_param=softness_param,
                                          units=10,
@@ -372,14 +370,14 @@ def digits_classification(method, TARGET_DOMAIN, single_best=False, single_sourc
 
             model.compile(optimizer=optimizer, loss=tf.keras.losses.CategoricalCrossentropy(from_logits=from_logits),
                           metrics=metrics)
-            
+
             callbacks = [DomainCallback(test_data=x_source_te, train_data=x_source_tr, print_res=True, max_sample_size=5000)]
             if early_stopping:
                 callbacks.append(EarlyStopping(patience=patience, restore_best_weights=True))
 
             print('\n BEGIN FINE TUNING:\t' + similarity_measure.upper() + "\t" + TARGET_DOMAIN[0] + "\n")
             run_start = datetime.now()
-            hist = model.fit(x=x_source_tr, y=y_source_tr.astype(np.float32), epochs=num_epochs_FT, verbose=2,
+            hist = model.fit(x=x_source_tr, y=y_source_tr.astype(np.float32), epochs=250, verbose=2,
                              batch_size=batch_size, shuffle=False, validation_data=(x_val, y_val),
                              callbacks=callbacks
                              )

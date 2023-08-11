@@ -6,6 +6,8 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 from sklearn.metrics import euclidean_distances
 from tensorflow.python.keras.layers import *
+from tensorflow.keras.layers import BatchNormalization
+
 from tensorflow_probability.python.math.psd_kernels.positive_semidefinite_kernel import _SumKernel
 
 img_shape = (32, 32, 3)
