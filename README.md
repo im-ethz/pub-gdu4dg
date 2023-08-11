@@ -1,4 +1,11 @@
-# Gated Domain Units for Domain Generalization
+# Gated Domain Units (TensorFlow)
+
+[![DOI](https://img.shields.io/badge/DOI-2206.12444/arxiv.org/abs/2206.12444-red.svg)](https://arxiv.org/abs/2206.12444)
+![GDU_logo](https://user-images.githubusercontent.com/73110207/185412013-40309db3-dc3d-4f32-bf65-6c00e87d28a7.png)
+
+Gated Domain Units (GDU) aim to make your deep learning models robust against distribution shifts when applied in the real-world. To make the GDus simpla and easily applicable, we integrated our GDU in a modular layer. Hence, our GDUs can be applied to your deep learning models by simply replacing the task-specific head of your model with our layer. For example, you can use a pre-trained ResNet-50 as the feature extractor and instead of a classification head you attach our layer that performs the same classification task: <code>model.add(DGLayer())</code>. For the **PyTorch** implementation please click [here](https://github.com/im-ethz/gdu4dg-pytorch).
+
+## Want to learn more about **GDUs**? 🤓
 
 In our [paper](https://arxiv.org/abs/2206.12444), we postulate that real-world distributions are composed of elementary distributions that remain invariant across different domains. We call this the **invariant elementary distribution (I.E.D.)** assumption. This invariance thus enables knowledge transfer to unseen domains. To exploit this assumption in domain generalization (DG), we developed a modular neural network layer (the DGLayer) that consists of **Gated Domain Units (GDUs)**. Because our layer is trained with backpropagation, it can be easily integrated into existing deep learning frameworks (see our example below).
 
@@ -24,7 +31,7 @@ To exploit this I.E.D. assumption, we developed the Gatd Domain Units. Each GDU 
 
 ### How can I explain and interpret what the GDUs have learned?
 
-## Get started: Integrate Gated Domain Units in your deepl elarning models
+## 🚀 Get started
 
 ### Install
 
@@ -33,3 +40,18 @@ Currently we do not support installation via pip or conda. To install and use ou
 ### Example: Extend existing deep learning Models with Gated Domain Units
 
 ### Set the parameters
+
+# Citation
+Original article: [Gated Domain Units for Multi-source Domain Generalization](https://doi.org/10.48550/arxiv.2206.12444)
+
+```
+@article{https://doi.org/10.48550/arxiv.2206.12444,
+  doi = {10.48550/ARXIV.2206.12444},
+  url = {https://arxiv.org/abs/2206.12444},
+  author = {Föll, Simon and Dubatovka, Alina and Ernst, Eugen and Maritsch, Martin and Okanovic, Patrik and Thäter, Gudrun and Buhmann, Joachim M. and Wortmann, Felix and Muandet, Krikamol},
+  title = {Gated Domain Units for Multi-source Domain Generalization},
+  publisher = {arXiv},
+  year = {2022},
+  copyright = {arXiv.org perpetual, non-exclusive license}
+}
+```
